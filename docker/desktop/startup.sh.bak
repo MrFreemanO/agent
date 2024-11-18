@@ -1,0 +1,93 @@
+#!/bin/bash
+
+# 设置noVNC标题
+sudo sed -i "s/<title>noVNC<\/title>/<title>ConsoleY - Remote Desktop<\/title>/" /opt/noVNC/index.html
+
+# 创建桌面目录和必要的目录
+mkdir -p $HOME/Desktop
+mkdir -p $HOME/Documents
+mkdir -p $HOME/Downloads
+
+# 创建桌面快捷方式
+cat > $HOME/Desktop/firefox.desktop << EOF
+[Desktop Entry]
+Name=Firefox
+Exec=firefox
+Icon=firefox
+Type=Application
+Categories=Network;WebBrowser;
+EOF
+
+cat > $HOME/Desktop/terminal.desktop << EOF
+[Desktop Entry]
+Name=Terminal
+Exec=xterm
+Icon=terminal
+Type=Application
+Categories=System;TerminalEmulator;
+EOF
+
+cat > $HOME/Desktop/file-manager.desktop << EOF
+[Desktop Entry]
+Name=File Manager
+Exec=pcmanfm
+Icon=system-file-manager
+Type=Application
+Categories=System;FileManager;
+EOF
+
+# 设置快捷方式权限
+chmod +x $HOME/Desktop/*.desktop
+
+# 创建欢迎文件
+cat > $HOME/Desktop/Welcome.txt << EOF
+Welcome to ConsoleY Development Environment!
+
+This environment includes:
+- Firefox Web Browser
+- Terminal
+- File Manager
+- Text Editor
+
+Feel free to explore and customize your workspace.
+EOF
+
+# 设置桌面背景和主题
+mkdir -p $HOME/.config/tint2
+cat > $HOME/.config/tint2/tint2rc << EOF
+# Tint2 config file
+panel_position = bottom center horizontal
+panel_size = 100% 30
+panel_margin = 0 0
+panel_padding = 0 0 0
+panel_background_id = 1
+wm_menu = 1
+panel_dock = 0
+panel_layer = top
+EOF
+
+# 启动X服务器
+Xvfb :$DISPLAY_NUM -screen 0 ${WIDTH}x${HEIGHT}x24 &
+sleep 1
+
+# 启动窗口管理器
+mutter --sm-disable --replace --x11 &
+sleep 1
+
+# 设置桌面背景
+xsetroot -solid "#2E3440"
+
+# 启动面板
+tint2 &
+
+# 启动文件管理器显示桌面
+pcmanfm --desktop &
+
+# 启动VNC服务器
+x11vnc -display :$DISPLAY_NUM -forever -shared -repeat -rfbauth $HOME/.vnc/passwd &
+
+# 启动noVNC
+/opt/noVNC/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
+
+# 保持容器运行
+tail -f /dev/null 

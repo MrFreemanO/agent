@@ -1,0 +1,17 @@
+version: '3'
+services:
+  consoley:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true
+    ports:
+      - "5800:5900"  # VNC
+      - "6070:6080"  # noVNC web访问
+      - "8090:8080"  # API服务
+    environment:
+      - DISPLAY=:1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    cap_add:
+      - SYS_ADMIN
