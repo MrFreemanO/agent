@@ -26,23 +26,23 @@ function App() {
       setLoading(true);
       setError('');
       console.log('Starting container...');
-      
+
       const id = await invoke('start_container');
       console.log('Container started with ID:', id);
-      
+
       setContainerId(id as string);
       setStatus('running');
-      
+
       // 获取初始日志
       await fetchLogs();
-      
+
       // 等待noVNC服务启动
       setTimeout(async () => {
         const iframe = document.getElementById('vnc-iframe') as HTMLIFrameElement;
         if (iframe) {
           console.log('Connecting to noVNC...');
           iframe.src = 'http://localhost:6070/vnc.html?autoconnect=true&resize=scale';
-          
+
           // 再次获取日志以查看启动过程
           await fetchLogs();
         }
@@ -132,18 +132,18 @@ function App() {
           Status: {status}
         </span>
       </div>
-      
+
       {error && (
         <div className="error-message">
           {error}
         </div>
       )}
-      
+
       <div className="logs-container">
         <h3>Container Logs:</h3>
         <pre>{logs}</pre>
       </div>
-      
+
       <div className="vnc-container">
         {status === 'running' ? (
           <iframe
