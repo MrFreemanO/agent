@@ -28,30 +28,30 @@ ENV DISPLAY=:$DISPLAY_NUM
 RUN apt-get update && \
     apt-get -y upgrade && \
     apt-get -y install --no-install-recommends \
-        # 系统工具
-        software-properties-common \
-        gpg-agent \
-        sudo \
-        curl \
-        wget \
-        git \
-        ca-certificates \
-        locales \
-        # UI 要求
-        xvfb \
-        xterm \
-        xdotool \
-        scrot \
-        imagemagick \
-        mutter \
-        x11vnc \
-        # 开发工具
-        build-essential \
-        pkg-config \
-        libssl-dev \
-        # 网络工具
-        net-tools \
-        netcat \
+    # 系统工具
+    software-properties-common \
+    gpg-agent \
+    sudo \
+    curl \
+    wget \
+    git \
+    ca-certificates \
+    locales \
+    # UI 要求
+    xvfb \
+    xterm \
+    xdotool \
+    scrot \
+    imagemagick \
+    mutter \
+    x11vnc \
+    # 开发工具
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    # 网络工具
+    net-tools \
+    netcat \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -59,21 +59,21 @@ RUN apt-get update && \
 RUN add-apt-repository ppa:mozillateam/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-        firefox-esr \
-        x11-apps \
-        gedit \
-        pcmanfm \
-        tint2 \
-        supervisor \
-        xfce4-terminal \
-        dbus-x11 \
-        gtk2-engines \
-        gtk2-engines-pixbuf \
-        gtk2-engines-murrine \
-        gnome-themes-standard \
-        libcanberra-gtk-module \
-        libcanberra-gtk3-module \
-        fonts-liberation \
+    firefox-esr \
+    x11-apps \
+    gedit \
+    pcmanfm \
+    tint2 \
+    supervisor \
+    xfce4-terminal \
+    dbus-x11 \
+    gtk2-engines \
+    gtk2-engines-pixbuf \
+    gtk2-engines-murrine \
+    gnome-themes-standard \
+    libcanberra-gtk-module \
+    libcanberra-gtk3-module \
+    fonts-liberation \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -112,6 +112,13 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY startup.sh /startup.sh
 COPY --chown=$USERNAME:$USERNAME desktop-config/ $HOME/.config/
 COPY --chown=$USERNAME:$USERNAME image/ $HOME/
+
+# 安装 dos2unix 用于转换脚本文件的换行符
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y dos2unix && \
+    dos2unix /startup.sh
 
 # 设置API服务器构建
 WORKDIR /build
