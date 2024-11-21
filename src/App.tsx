@@ -1,55 +1,44 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as Switch from "@radix-ui/react-switch";
+import * as Select from "@radix-ui/react-select";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "@radix-ui/react-icons";
+
 import './App.css';
 
 function App() {
+  // 容器ID
   const [containerId, setContainerId] = useState<string>('');
-  const [status, setStatus] = useState<string>('stopped');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-  const [logs, setLogs] = useState<string>('');
 
-  // 获取容器日志
-  const fetchLogs = async () => {
-    try {
-      const containerLogs = await invoke('get_container_logs');
-      setLogs(containerLogs as string);
-    } catch (error) {
-      console.error('Failed to fetch logs:', error);
-      setLogs(`Error fetching logs: ${error}`);
-    }
-  };
+  const [status, setStatus] = useState<string>('stopped');
+
+  const [loading, setLoading] = useState<boolean>(false);
+
+  const [isSide, setIsSide] = useState(false);
+
+  const [active, setActive] = useState(1);
+
+  const [checked, setChecked] = useState(true);
+
+  const [value, setValue] = useState('');
 
   // 启动容器
   const startContainer = async () => {
     try {
       setLoading(true);
-      setError('');
-      console.log('Starting container...');
-
       const id = await invoke('start_container');
-      console.log('Container started with ID:', id);
-
       setContainerId(id as string);
       setStatus('running');
-
-      // 获取初始日志
-      await fetchLogs();
 
       // 等待noVNC服务启动
       setTimeout(async () => {
         const iframe = document.getElementById('vnc-iframe') as HTMLIFrameElement;
         if (iframe) {
-          console.log('Connecting to noVNC...');
           iframe.src = 'http://localhost:6070/vnc.html?autoconnect=true&resize=scale';
-
-          // 再次获取日志以查看启动过程
-          await fetchLogs();
         }
       }, 2000);
+
     } catch (error) {
-      console.error('Failed to start container:', error);
-      setError(`Failed to start container: ${error}`);
       setStatus('error');
     } finally {
       setLoading(false);
@@ -93,77 +82,126 @@ function App() {
     }
   };
 
-  // 定期更新日志
   useEffect(() => {
-    let interval: number;
-    if (status === 'running') {
-      interval = window.setInterval(fetchLogs, 5000);
-    }
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [status]);
+    startContainer();
+  }, [])
+
+  // 允许人类操作界面
+  const onCheckedChange = (checked: boolean) => {
+    setChecked(checked);
+  };
+
+  // 选择分辨率
+  const onResolutionChange = (value: string) => {
+    setValue(value);
+  }
 
   return (
     <div className="container">
-      <h1>ConsoleY</h1>
-      <div className="controls">
-        <button
-          onClick={startContainer}
-          disabled={loading || status === 'running'}
-        >
-          {loading ? 'Starting...' : 'Start'}
-        </button>
-        <button
-          onClick={stopContainer}
-          disabled={loading || status === 'stopped'}
-        >
-          Stop
-        </button>
-        <button
-          onClick={restartContainer}
-          disabled={loading || status === 'stopped'}
-        >
-          Restart
-        </button>
-        <span className={`status ${status}`}>
-          Status: {status}
-        </span>
-      </div>
-
-      {error && (
-        <div className="error-message">
-          {error}
-        </div>
-      )}
-
-      <div className="logs-container">
-        <h3>Container Logs:</h3>
-        <pre>{logs}</pre>
-      </div>
-
-      <div className="vnc-container">
-        {status === 'running' ? (
-          <iframe
-            id="vnc-iframe"
-            title="ConsoleY Remote Desktop"
-            src="about:blank"
-            style={{
-              width: '100%',
-              height: '600px',
-              border: 'none',
-            }}
-          />
-        ) : (
-          <div className="placeholder">
-            Remote desktop will appear here when started
+      <div className='container_content'>
+        <div className='title_container'>
+          <div>ConsoleY</div>
+          <div className='title_container_right' onClick={() => setIsSide(!isSide)}>
+            <svg className="icon_arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M5 7h14M5 12h14M5 17h14" />
+            </svg>
           </div>
-        )}
+        </div>
+        <div className="vnc-container">
+          {
+            loading ?
+              <div className="placeholder">Loading...</div> :
+              status === 'running' ? (
+                <iframe
+                  id="vnc-iframe"
+                  title="ConsoleY Remote Desktop"
+                  src="about:blank"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                  }}
+                />
+              ) : (
+                <div className="placeholder">
+                  Remote desktop will appear here when started
+                </div>
+              )
+          }
+        </div>
       </div>
+      {
+        isSide ? <div className='side' /> : ''
+      }
+      {
+        isSide ? <div className='container_option'>
+          <div className='container_option_tab'>
+            <div className={active === 1 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(1)}>设置</div>
+            <div className={active === 2 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(2)}>调试</div>
+            <div className={active === 3 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(3)}>应用程序</div>
+          </div>
+          <div className='container_option_content'>
+            {active === 1 ?
+              <div className='container_option_content_box'>
+                <div className='container_option_content_item'>
+                  <div className='container_option_content_item_label'>允许人类操作界面</div>
+                  <div className='container_option_content_item_com'>
+                    <Switch.Root className="SwitchRoot" checked={checked} onCheckedChange={(checked) => onCheckedChange(checked)}>
+                      <Switch.Thumb className="SwitchThumb" />
+                    </Switch.Root>
+                  </div>
+                </div>
+                <div className='container_option_content_item'>
+                  <div className='container_option_content_item_label'>桌面分辨率</div>
+                  <div className='container_option_content_item_com'>
+                    <Select.Root value={value} onValueChange={(value) => onResolutionChange(value)}>
+                      <Select.Trigger className="SelectTrigger">
+                        <Select.Value placeholder="Select a resolution…" />
+                        <Select.Icon className="SelectIcon">
+                          <ChevronDownIcon />
+                        </Select.Icon>
+                      </Select.Trigger>
+                      <Select.Portal>
+                        <Select.Content className="SelectContent">
+                          <Select.Viewport className="SelectViewport">
+                            <Select.Group>
+                              <SelectItem value="1024*768">1024*768</SelectItem>
+                              <SelectItem value="1920*1080">1920*1080</SelectItem>
+                              <SelectItem value="2560*1440">2560*1440</SelectItem>
+                              <SelectItem value="3840*2160">3840*2160</SelectItem>
+                            </Select.Group>
+                          </Select.Viewport>
+                        </Select.Content>
+                      </Select.Portal>
+                    </Select.Root>
+                  </div>
+                </div>
+              </div>
+              : ''}
+            {active === 2 ? <div className='container_option_content_box'></div> : ''}
+            {active === 3 ? <div className='container_option_content_box'></div> : ''}
+          </div>
+        </div> : ''
+      }
     </div>
   );
 }
+
+const SelectItem = React.forwardRef(
+  ({ children, ...props }: { children: React.ReactNode, value: string }, forwardedRef) => {
+    return (
+      <Select.Item
+        {...props}
+        ref={forwardedRef as any}
+        className="SelectItem"
+      >
+        <Select.ItemText>{children}</Select.ItemText>
+        <Select.ItemIndicator className="SelectItemIndicator">
+          <CheckIcon />
+        </Select.ItemIndicator>
+      </Select.Item>
+    );
+  },
+);
 
 export default App;
