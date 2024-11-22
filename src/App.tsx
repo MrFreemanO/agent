@@ -108,6 +108,7 @@ function App() {
           </div>
         </div>
         <div className="vnc-container">
+          {!checked ? <div className="vnc-container_model" /> : ''}
           {
             loading ?
               <div className="placeholder">Loading...</div> :
@@ -137,8 +138,8 @@ function App() {
         isSide ? <div className='container_option'>
           <div className='container_option_tab'>
             <div className={active === 1 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(1)}>设置</div>
-            <div className={active === 2 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(2)}>调试</div>
-            <div className={active === 3 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(3)}>应用程序</div>
+            {/* <div className={active === 2 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(2)}>调试</div>
+            <div className={active === 3 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(3)}>应用程序</div> */}
           </div>
           <div className='container_option_content'>
             {active === 1 ?
@@ -146,7 +147,7 @@ function App() {
                 <div className='container_option_content_item'>
                   <div className='container_option_content_item_label'>允许人类操作界面</div>
                   <div className='container_option_content_item_com'>
-                    <Switch.Root className="SwitchRoot" checked={checked} onCheckedChange={(checked) => onCheckedChange(checked)}>
+                    <Switch.Root className={checked ? "SwitchRoot" : "SwitchNoRoot"} checked={checked} onCheckedChange={(checked) => onCheckedChange(checked)}>
                       <Switch.Thumb className="SwitchThumb" />
                     </Switch.Root>
                   </div>
