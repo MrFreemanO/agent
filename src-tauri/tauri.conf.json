@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "consoley-dev",
+  "productName": "ConsoleY",
   "version": "0.1.0",
   "identifier": "com.consoley-dev.app",
   "build": {
@@ -12,9 +12,10 @@
   "app": {
     "windows": [
       {
-        "title": "consoley-dev",
-        "width": 800,
-        "height": 600
+        "title": "ConsoleY",
+        "width": 1024,
+        "height": 768,
+        "resizable": false
       }
     ],
     "security": {
