@@ -11,7 +11,9 @@ services:
       - "8090:8080"  # API服务
     environment:
       - DISPLAY=:1
+      - RUST_LOG=debug  # 开发模式下启用详细日志
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./docker/desktop/api-server:/app/api-server  # 开发模式下映射本地源代码
     cap_add:
       - SYS_ADMIN

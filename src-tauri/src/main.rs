@@ -6,6 +6,9 @@ mod docker;
 use docker::DockerManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use reqwest;
+use serde::{Deserialize, Serialize};
+use tauri;
 
 struct DockerState {
     container_id: String,
@@ -34,7 +37,7 @@ async fn start_container(
         error_msg
     })?;
     
-    // 确保镜像存在
+    // Ensure image exists
     println!("Checking/building Docker image...");
     docker_manager
         .ensure_image("consoleai/desktop:latest")
@@ -45,7 +48,7 @@ async fn start_container(
             error_msg
         })?;
     
-    // 创建并启动容器
+    // Create and start container
     println!("Creating and starting container...");
     let container_id = docker_manager
         .create_and_start_container()
@@ -130,10 +133,10 @@ async fn get_app_info(
 fn main() {
     println!("Tauri application starting...");
 
-    // 初始化日志
+    // Initialize logging
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     
-    // Tauri 应用程序启动
+    // Start Tauri application
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(DockerState::default())))
         .invoke_handler(tauri::generate_handler![
