@@ -7,6 +7,10 @@ use actix_web::middleware::Logger;
 use tokio::time::{timeout, sleep, Duration};
 use std::{io::Write, process::Stdio};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use std::sync::Mutex;
+use std::sync::OnceLock;
+
+static BASH_SESSION: OnceLock<Mutex<Option<BashSession>>> = OnceLock::new();
 
 #[derive(Serialize)]
 pub struct ActionResponse {
@@ -114,7 +118,7 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
                         Ok((x, y)) => HttpResponse::Ok().json(ActionResponse {
                             r#type: String::from("success"),
                             media_type: String::from("text/plain"),
-                            data: format!("Cursor position: X={}, Y={}", x, y),
+                            data: format!("Cursor position is: X={}, Y={}", x, y),
                         }),
                         Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
                             r#type: String::from("error"),
@@ -219,7 +223,7 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
                         Ok(_) => HttpResponse::Ok().json(ActionResponse {
                             r#type: String::from("success"),
                             media_type: String::from("text/plain"),
-                            data: String::from("Left click drag executed successfully"),
+                            data: String::from("Left click drag executed successfully!"),
                         }),
                         Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
                             r#type: String::from("error"),
@@ -587,7 +591,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 let mut lines: Vec<&str> = content.lines().collect();
                                 let line_idx = *line_num as usize;
                                 
-                                // 创建备份文件
+                                // 创备份文件
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
@@ -714,8 +718,8 @@ struct BashSession {
 }
 
 impl BashSession {
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    const OUTPUT_DELAY: Duration = Duration::from_millis(200);
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    const OUTPUT_DELAY: Duration = Duration::from_millis(50);
     
     async fn new() -> Result<Self, String> {
         let mut child = tokio::process::Command::new("/bin/bash")
@@ -740,127 +744,192 @@ impl BashSession {
 
     async fn execute(&mut self, command: &str) -> Result<(String, String), String> {
         if self.timed_out {
-            return Err(format!(
-                "timed out: bash has not returned in {:?} seconds and must be restarted",
-                Self::TIMEOUT.as_secs()
-            ));
+            return Err("Session timed out".to_string());
         }
 
-        const SENTINEL: &str = "<<exit>>";
+        let cmd = format!("{}\necho '---END---'\n", command);
+        log::info!("Executing command: {}", cmd);
         
-        // 使用 AsyncWriteExt 的 write_all 方法
         self.stdin
-            .write_all(format!("{}; echo '{}'\n", command, SENTINEL).as_bytes())
-            .await  // 注意这里需要 .await
-            .map_err(|e| format!("Failed to write command: {}", e))?;
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| {
+                log::error!("Failed to write command: {}", e);
+                format!("Failed to write command: {}", e)
+            })?;
+        
+        self.stdin
+            .flush()
+            .await
+            .map_err(|e| {
+                log::error!("Failed to flush stdin: {}", e);
+                format!("Failed to flush stdin: {}", e)
+            })?;
 
         let mut output = String::new();
-        let mut error = String::new();
-        let mut buffer = [0; 1024];
+        let mut buffer = [0u8; 1024];
 
-        // Read stdout with timeout
+        // 使用timeout包装读取操作
         match timeout(Self::TIMEOUT, async {
             loop {
-                sleep(Self::OUTPUT_DELAY).await;
                 match self.stdout.read(&mut buffer).await {
-                    Ok(n) if n == 0 => break,
-                    Ok(n) => {
+                    Ok(n) if n > 0 => {
                         let chunk = String::from_utf8_lossy(&buffer[..n]);
                         output.push_str(&chunk);
-                        if output.contains(SENTINEL) {
-                            output = output[..output.find(SENTINEL).unwrap()].to_string();
+                        log::debug!("Read chunk: {}", chunk);
+                        
+                        // 检查是否遇到结束标记
+                        if output.contains("---END---") {
+                            log::info!("Found end marker");
                             break;
                         }
                     }
-                    Err(e) => return Err(format!("Failed to read stdout: {}", e)),
+                    Ok(_) => {
+                        log::info!("Reached EOF");
+                        break;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to read stdout: {}", e);
+                        return Err(format!("Failed to read stdout: {}", e))
+                    },
                 }
             }
-            Ok(())
-        }).await {
-            Ok(result) => result?,
+            Ok::<_, String>(())
+        })
+        .await
+        {
+            Ok(Ok(_)) => {
+                // 移除结束标记
+                if let Some(pos) = output.find("---END---") {
+                    output.truncate(pos);
+                }
+                output = output.trim().to_string();
+                log::info!("Command completed successfully with output: {}", output);
+                
+                Ok((output, String::new()))
+            }
+            Ok(Err(e)) => {
+                log::error!("Command execution error: {}", e);
+                Err(e)
+            },
             Err(_) => {
+                log::error!("Command execution timed out");
                 self.timed_out = true;
-                return Err(format!(
-                    "timed out: bash has not returned in {:?} seconds and must be restarted",
-                    Self::TIMEOUT.as_secs()
-                ));
+                Err("Command execution timed out".to_string())
             }
         }
+    }
 
-        // Read any stderr
-        loop {
-            match self.stderr.read(&mut buffer).await {
-                Ok(n) if n == 0 => break,
-                Ok(n) => error.push_str(&String::from_utf8_lossy(&buffer[..n])),
-                Err(e) => return Err(format!("Failed to read stderr: {}", e)),
+    async fn stop(&mut self) -> Result<(), String> {
+        // 发送退出命令
+        self.stdin
+            .write_all(b"exit\n")
+            .await
+            .map_err(|e| format!("Failed to send exit command: {}", e))?;
+        
+        // 等待进程结束
+        match timeout(Duration::from_secs(5), self.process.wait()).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => {
+                log::warn!("Process didn't exit cleanly: {}", e);
+                // 强制结束进程
+                self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
+                Ok(())
+            },
+            Err(_) => {
+                // 超时后强制结束进程
+                self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
+                Ok(())
             }
         }
-
-        Ok((output, error))
     }
 }
 
-static BASH_SESSION: tokio::sync::Mutex<Option<BashSession>> = tokio::sync::Mutex::const_new(None);
 
 #[post("/bash")]
 async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
-    println!("Received bash request: {:?}", req);
+    log::info!("Received bash request: {:?}", req);
     
-    let mut session = BASH_SESSION.lock().await;
-    println!("Session lock acquired");
-
-    // Initialize session if needed
-    if session.is_none() {
-        println!("Creating new session");
+    let session_mutex = BASH_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = session_mutex.lock().unwrap();
+    
+    // 处理restart请求
+    if req.restart.unwrap_or(false) {
+        // 如果存在旧session，先停止它
+        if let Some(mut session) = session_guard.take() {
+            if let Err(e) = session.stop().await {
+                log::warn!("Failed to stop bash session: {}", e);
+            }
+        }
+        
+        // 创建新session
         match BashSession::new().await {
             Ok(new_session) => {
-                println!("Session created successfully");
-                *session = Some(new_session);
-            },
-            Err(e) => {
-                println!("Failed to create session: {}", e);
-                return HttpResponse::InternalServerError().json(ActionResponse {
-                    r#type: String::from("error"),
+                *session_guard = Some(new_session);
+                return HttpResponse::Ok().json(ActionResponse {
+                    r#type: String::from("success"),
                     media_type: String::from("text/plain"),
-                    data: format!("Failed to start bash session: {}", e),
+                    data: String::from("Bash session has been restarted"),
                 });
-            }
+            },
+            Err(e) => return HttpResponse::InternalServerError().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: format!("Failed to restart bash session: {}", e),
+            })
         }
     }
 
-    // Execute command if provided
+    // 处理命令请求
     if let Some(command) = &req.command {
-        println!("Executing command: {}", command);
-        match session.as_mut().unwrap().execute(command).await {
-            Ok((stdout, stderr)) => {
-                println!("Command executed successfully");
-                let response = if stderr.is_empty() {
-                    stdout
-                } else {
-                    format!("stdout:\n{}\nstderr:\n{}", stdout, stderr)
-                };
-                
-                HttpResponse::Ok().json(ActionResponse {
-                    r#type: String::from("success"),
-                    media_type: String::from("text/plain"),
-                    data: response,
-                })
-            }
-            Err(e) => {
-                println!("Command execution failed: {}", e);
-                HttpResponse::InternalServerError().json(ActionResponse {
+        // 确保session存在
+        if session_guard.is_none() {
+            match BashSession::new().await {
+                Ok(new_session) => {
+                    *session_guard = Some(new_session);
+                },
+                Err(e) => return HttpResponse::InternalServerError().json(ActionResponse {
                     r#type: String::from("error"),
                     media_type: String::from("text/plain"),
-                    data: format!("Failed to execute command: {}", e),
+                    data: format!("Failed to create bash session: {}", e),
                 })
             }
         }
+
+        // 执行命令
+        if let Some(session) = session_guard.as_mut() {
+            match session.execute(command).await {
+                Ok((stdout, stderr)) => {
+                    let response = if stderr.is_empty() {
+                        stdout
+                    } else {
+                        format!("stdout:\n{}\nstderr:\n{}", stdout, stderr)
+                    };
+                    
+                    HttpResponse::Ok().json(ActionResponse {
+                        r#type: String::from("success"),
+                        media_type: String::from("text/plain"),
+                        data: response,
+                    })
+                }
+                Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                    r#type: String::from("error"),
+                    media_type: String::from("text/plain"),
+                    data: format!("Command execution failed: {}", e),
+                })
+            }
+        } else {
+            HttpResponse::InternalServerError().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: String::from("No active bash session"),
+            })
+        }
     } else {
-        println!("No command provided");
         HttpResponse::BadRequest().json(ActionResponse {
             r#type: String::from("error"),
             media_type: String::from("text/plain"),
-            data: String::from("No command provided"),
+            data: String::from("Invalid request: command is required when not restarting"),
         })
     }
 }
