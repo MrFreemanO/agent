@@ -15,7 +15,9 @@
         "title": "ConsoleY",
         "width": 1024,
         "height": 768,
-        "resizable": false
+        "resizable": false,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {

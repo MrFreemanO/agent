@@ -257,22 +257,48 @@ button {
 }
 
 .title_container {
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 10px;
+  padding: 0 10px;
+  background-color: #1a73e8;
+  color: white;
+  -webkit-app-region: drag; /* 确保在 Electron 等平台也兼容 */
+  user-select: none; /* 禁止选中文本 */
+  cursor: default; /* 设置默认光标 */
+}
+
+.title_container *{
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.title_container_left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app_icon {
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
 }
 
 .title_container_right {
   display: flex;
-  justify-content: center;
   align-items: center;
+  gap: 12px;
 }
 
 .icon_arrow {
-  width: 24px;
-  height: 24px;
   cursor: pointer;
+  color: white;
+}
+
+.icon_arrow:hover {
+  opacity: 0.8;
 }
 
 .vnc-container {
@@ -310,4 +336,57 @@ button {
     color: #f6f6f6;
     background-color: #2f2f2f;
   }
+}
+
+.titlebar {
+  height: 30px;
+  background: #1a73e8;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  color: white;
+  user-select: none;
+}
+
+/* 确保标题栏可拖动 */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* 确保按钮不受拖动影响 */
+.titlebar-button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+}
+
+.app_icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+}
+
+.window-controls button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
