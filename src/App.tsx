@@ -99,16 +99,12 @@ function App() {
   return (
     <div className="container">
       <div className='container_content'>
-        <div className='title_container'>
-          <div className="header-content" data-tauri-drag-region >
-            <div className="title">ConsoleY</div>
-          </div>
-          <div className='title_container_right none-drag-region'>
-            <div className="control-button" onClick={() => setIsSide(!isSide)}>
-              <svg className="icon_arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-                <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M5 7h14M5 12h14M5 17h14" />
-              </svg>
-            </div>
+        <div className='title_container' data-tauri-drag-region>
+          <div>ConsoleY</div>
+          <div className='title_container_right' onClick={() => setIsSide(!isSide)}>
+            <svg className="icon_arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M5 7h14M5 12h14M5 17h14" />
+            </svg>
           </div>
         </div>
         <div className="vnc-container">

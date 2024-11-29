@@ -16,8 +16,9 @@
         "width": 1024,
         "height": 768,
         "resizable": false,
-        "decorations": false,
-        "transparent": true
+        "decorations": true,
+        "fullscreen": false,
+        "titleBarStyle": "Visible"
       }
     ],
     "security": {
