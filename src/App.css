@@ -262,11 +262,10 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  background-color: #1a73e8;
-  color: white;
-  -webkit-app-region: drag; /* 确保在 Electron 等平台也兼容 */
-  user-select: none; /* 禁止选中文本 */
-  cursor: default; /* 设置默认光标 */
+  /* background-color: #1a73e8;
+  color: white; */
+  user-select: none;
+  cursor: default;
 }
 
 .title_container *{
@@ -294,7 +293,7 @@ button {
 
 .icon_arrow {
   cursor: pointer;
-  color: white;
+  /* color: white; */
 }
 
 .icon_arrow:hover {
