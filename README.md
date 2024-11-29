@@ -67,11 +67,9 @@ npm run tauri dev
 
 ConsoleY 提供以下 API 接口：
 ```
-GET /computer/screenshot # 获取屏幕截图
-POST /computer/click # 模拟鼠标点击
-POST /computer/keypress # 模拟按键
-GET /computer/status # 获取系统状态
-......
+GET /computer # 使用计算机功能
+POST /edit # 编辑文件
+POST /bash # 执行 bash 命令
 ```
 
 详细的 API 文档请参考 [API.md](docs/API.md)。
@@ -82,21 +80,80 @@ GET /computer/status # 获取系统状态
 
 ```
 consoley/
-├── src-tauri/ # Tauri 配置和后端代码
+├── src-tauri/ # Tauri 后端代码
+│ ├── src/ # Rust 源代码
+│ ├── build.rs # 构建脚本
+│ └── tauri.conf.json # Tauri 配置
 ├── docker/ # Docker 相关文件
-├── public/ # 前端静态资源
+│ └── desktop/ # 桌面环境容器
+│ ├── Dockerfile # 生产环境镜像
+│ ├── Dockerfile.dev # 开发环境镜像
+│ ├── startup.sh # 生产环境启动脚本
+│ ├── startup.dev.sh # 开发环境启动脚本
+│ └── supervisord.conf # 进程管理配置
 ├── src/ # 前端源代码
-└── docker-compose.yml # Docker 编排配置
+├── public/ # 静态资源
+├── docker-compose.yml # 生产环境容器编排
+└── docker-compose.dev.yml # 开发环境容器编排
 ```
 
-### 构建
+### Docker 构建
 
+#### 开发环境
+```bash
+# 构建开发环境镜像
+docker-compose -f docker-compose.dev.yml build
+
+# 构建开发环境镜像（无缓存）
+docker-compose -f docker-compose.dev.yml build --no-cache
+
+# 启动开发环境容器
+docker-compose -f docker-compose.dev.yml up -d
+
+# 停止开发环境容器
+docker-compose -f docker-compose.dev.yml down
+
+# 查看开发环境日志
+docker-compose -f docker-compose.dev.yml logs -f
+
+# 进入Docker桌面环境
+docker-compose -f docker-compose.dev.yml exec consoley bash
+```
+
+#### 生产环境
+待补充
+
+### 前端构建
 ```bash
 # 开发模式
 npm run tauri dev
 # 构建发布版本
 npm run tauri build
 ```
+
+### 单元测试
+```bash
+# 运行所有测试
+cargo test
+# 运行指定测试
+cargo test --test <test_name>
+```
+
+直接通过CURL测试API接口示例
+```bash
+# 测试健康检查接口
+curl -X GET http://localhost:8090/health
+
+# 测试截屏功能
+curl -X POST http://localhost:8090/computer -H "Content-Type: application/json" -d '{"action":"screenshot"}'
+
+# 测试编辑文件功能
+curl -X POST http://localhost:8090/edit -H "Content-Type: application/json" -d '{"command":"create","path":"/home/consoley/test.txt","file_text":"Hello, World!"}'
+
+# 测试执行bash命令功能
+curl -X POST http://localhost:8090/bash -H "Content-Type: application/json" -d '{"command":"echo Hello, World!"}'
+```
+
 ## 🤝 贡献
 
 欢迎提交 Pull Request 和 Issue！在提交之前，请确保：
