@@ -1,24 +1,65 @@
 use bollard::Docker;
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, StopContainerOptions};
-use bollard::models::HostConfig;
-use bollard::models::PortBinding;
+use bollard::models::{HostConfig, PortBinding, ContainerSummary};
 use futures_util::stream::StreamExt;
+use futures_util::TryStreamExt;
 use std::collections::HashMap;
-use std::error::Error;
+use std::sync::Arc;
+
+#[derive(Debug)]
+pub enum DockerError {
+    Connection(String),
+    Container(String),
+    Image(String),
+    IO(String),
+}
+
+impl std::error::Error for DockerError {}
+
+impl std::fmt::Display for DockerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DockerError::Connection(msg) => write!(f, "Docker connection error: {}", msg),
+            DockerError::Container(msg) => write!(f, "Container operation error: {}", msg),
+            DockerError::Image(msg) => write!(f, "Image operation error: {}", msg),
+            DockerError::IO(msg) => write!(f, "IO error: {}", msg),
+        }
+    }
+}
+
+// 添加错误转换实现
+impl From<bollard::errors::Error> for DockerError {
+    fn from(err: bollard::errors::Error) -> Self {
+        DockerError::Container(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for DockerError {
+    fn from(err: std::io::Error) -> Self {
+        DockerError::IO(err.to_string())
+    }
+}
 
 pub struct DockerManager {
-    docker: Docker,
+    docker: Arc<Docker>,
 }
 
 impl DockerManager {
-    pub async fn new() -> Result<Self, Box<dyn Error>> {
-        let docker = Docker::connect_with_local_defaults()?;
-        Ok(DockerManager { docker })
+    pub async fn new() -> Result<Self, DockerError> {
+        let docker = Docker::connect_with_local_defaults()
+            .map_err(|e| DockerError::Connection(e.to_string()))?;
+        Ok(DockerManager { 
+            docker: Arc::new(docker) 
+        })
     }
 
-    // 加载内置的Docker镜像
-    // 检查并拉取镜像
-    pub async fn ensure_image(&self, image: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn list_containers(&self) -> Result<Vec<ContainerSummary>, DockerError> {
+        self.docker.list_containers::<String>(None)
+            .await
+            .map_err(|e| DockerError::Container(e.to_string()))
+    }
+
+    pub async fn ensure_image(&self, image: &str) -> Result<(), DockerError> {
         // 首先检查本地是否存在镜像
         let images = self.docker.list_images::<String>(None).await?;
         let image_exists = images.iter().any(|img| {
@@ -57,7 +98,7 @@ impl DockerManager {
                     }
                     Err(e) => {
                         println!("Build error: {}", e);
-                        return Err(Box::new(e));
+                        return Err(DockerError::Image(e.to_string()));
                     }
                 }
             }
@@ -66,116 +107,82 @@ impl DockerManager {
         Ok(())
     }
 
-    pub async fn create_and_start_container(&self) -> Result<String, Box<dyn Error>> {
-        // 检查并移除已存在的容器
-        match self.docker.inspect_container("consoley-desktop", None).await {
-            Ok(_) => {
-                println!("Found existing container, stopping and removing it...");
-                let _ = self.docker.stop_container("consoley-desktop", None).await;
-                let _ = self.docker.remove_container("consoley-desktop", None).await;
-            }
-            Err(_) => {
-                println!("No existing container found, proceeding with creation...");
-            }
-        }
-    
-        let config = CreateContainerOptions {
-            name: "consoley-desktop",
-            platform: None,
-        };
+    pub async fn create_and_start_container(&self) -> Result<String, DockerError> {
+        // 创建容器配置
+        let mut port_bindings = HashMap::new();
         
+        // VNC端口映射
+        let binding5900 = vec![PortBinding {
+            host_ip: Some(String::from("0.0.0.0")),
+            host_port: Some(String::from("5800")),
+        }];
+        
+        // noVNC端口映射
+        let binding6080 = vec![PortBinding {
+            host_ip: Some(String::from("0.0.0.0")),
+            host_port: Some(String::from("6070")),
+        }];
+        
+        // API服务端口映射
+        let binding8080 = vec![PortBinding {
+            host_ip: Some(String::from("0.0.0.0")),
+            host_port: Some(String::from("8090")),
+        }];
+
+        port_bindings.insert(String::from("5900/tcp"), Some(binding5900));
+        port_bindings.insert(String::from("6080/tcp"), Some(binding6080));
+        port_bindings.insert(String::from("8080/tcp"), Some(binding8080));
+
         let host_config = HostConfig {
-            port_bindings: Some({
-                let mut bindings = HashMap::new();
-                let binding5900 = vec![PortBinding {
-                    host_ip: Some("0.0.0.0".to_string()),
-                    host_port: Some("5800".to_string()),
-                }];
-                let binding6080 = vec![PortBinding {
-                    host_ip: Some("0.0.0.0".to_string()),
-                    host_port: Some("6070".to_string()),
-                }];
-                let binding8080 = vec![PortBinding {
-                    host_ip: Some("0.0.0.0".to_string()),
-                    host_port: Some("8090".to_string()),
-                }];
-                bindings.insert(String::from("5900/tcp"), Some(binding5900));
-                bindings.insert(String::from("6080/tcp"), Some(binding6080));
-                bindings.insert(String::from("8080/tcp"), Some(binding8080));
-                bindings
-            }),
+            port_bindings: Some(port_bindings),
             privileged: Some(true),
-            security_opt: Some(vec![String::from("seccomp=unconfined")]),
             binds: Some(vec![String::from("/tmp/.X11-unix:/tmp/.X11-unix:rw")]),
-            shm_size: Some(67108864), // 64MB
             ..Default::default()
         };
-    
-        // 环境变量配置
-        let env = vec![
-            String::from("DISPLAY=:1"),
-            String::from("RESOLUTION=1280x720x24"),
-            String::from("VNC_PASSWORD=consoley"),
-            String::from("LANG=en_US.UTF-8"),
-            String::from("LANGUAGE=en_US:en"),
-            String::from("LC_ALL=en_US.UTF-8")
-        ];
-    
-        let container = self.docker.create_container(
-            Some(config),
-            Config {
-                image: Some(String::from("consoleai/desktop:latest")),
-                hostname: Some(String::from("consoley")),
-                exposed_ports: Some({
-                    let mut ports = HashMap::new();
-                    ports.insert("5900/tcp".to_string(), HashMap::new());
-                    ports.insert("6080/tcp".to_string(), HashMap::new());
-                    ports.insert("8080/tcp".to_string(), HashMap::new());
-                    ports
+
+        let config = Config {
+            image: Some(String::from("consoleai/desktop:latest")),
+            host_config: Some(host_config),
+            env: Some(vec![
+                String::from("DISPLAY=:1"),
+                String::from("WIDTH=1024"),
+                String::from("HEIGHT=768"),
+            ]),
+            ..Default::default()
+        };
+
+        // 创建容器
+        let container = self.docker
+            .create_container(
+                Some(CreateContainerOptions {
+                    name: "consoley",
+                    platform: None,
                 }),
-                env: Some(env),
-                host_config: Some(host_config),
-                working_dir: Some(String::from("/root")),
-                tty: Some(true),
-                ..Default::default()
-            },
-        ).await?;
-    
-        self.docker.start_container(&container.id, None::<StartContainerOptions<String>>).await?;
-        
+                config,
+            )
+            .await?;
+
+        // 启动容器
+        self.docker
+            .start_container(&container.id, None::<StartContainerOptions<String>>)
+            .await?;
+
         Ok(container.id)
     }
-    
 
-
-    // 停止容器
-    pub async fn stop_container(&self, container_id: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn stop_container(&self, container_id: &str) -> Result<(), DockerError> {
         self.docker
-            .stop_container(container_id, None::<StopContainerOptions>)
+            .stop_container(
+                container_id,
+                None::<StopContainerOptions>,
+            )
             .await?;
         Ok(())
     }
-    
 
-    // 删除容器
-    pub async fn remove_container(&self, container_id: &str) -> Result<(), Box<dyn Error>> {
-        self.docker.remove_container(container_id, None).await?;
-        Ok(())
-    }
-
-    // 检查容器状态
-    pub async fn check_container_status(&self, container_id: &str) -> Result<String, Box<dyn Error>> {
-        let container = self.docker.inspect_container(container_id, None).await?;
-        Ok(container.state
-            .and_then(|state| state.status)
-            .map(|status| status.to_string())
-            .unwrap_or_else(|| "unknown".to_string()))
-    }
-
-    // 添加获取容器日志的方法
-    pub async fn get_container_logs(&self, container_id: &str) -> Result<String, Box<dyn Error>> {
+    pub async fn get_container_logs(&self, container_id: &str) -> Result<String, DockerError> {
         use bollard::container::LogsOptions;
-        
+
         let options = LogsOptions::<String> {
             stdout: true,
             stderr: true,
@@ -183,28 +190,30 @@ impl DockerManager {
             ..Default::default()
         };
 
-        let logs = self.docker.logs(container_id, Some(options));
-        let mut output = String::new();
-        
-        futures_util::pin_mut!(logs);
-        while let Some(log) = logs.next().await {
-            match log {
-                Ok(log) => output.push_str(&log.to_string()),
-                Err(e) => eprintln!("Error getting logs: {}", e),
-            }
-        }
-        
-        Ok(output)
+        let logs = self.docker
+            .logs(container_id, Some(options))
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        Ok(logs.into_iter()
+            .map(|log| log.to_string())
+            .collect::<Vec<_>>()
+            .join("\n"))
     }
 
-    // 添加重启容器的方法
-    pub async fn restart_container(&self, container_id: &str) -> Result<(), Box<dyn Error>> {
-        self.docker.restart_container(container_id, None).await?;
+    pub async fn restart_container(&self, container_id: &str) -> Result<(), DockerError> {
+        self.docker
+            .restart_container(container_id, None)
+            .await?;
         Ok(())
     }
 }
 
-fn tar_directory(path: &std::path::Path) -> Result<Vec<u8>, Box<dyn Error>> {
+// 实现 Send 和 Sync
+unsafe impl Send for DockerManager {}
+unsafe impl Sync for DockerManager {}
+
+fn tar_directory(path: &std::path::Path) -> Result<Vec<u8>, DockerError> {
     let mut tar = tar::Builder::new(Vec::new());
     tar.append_dir_all(".", path)?;
     Ok(tar.into_inner()?)

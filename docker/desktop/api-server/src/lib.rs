@@ -383,7 +383,7 @@ fn execute_xdotool(args: &[&str]) -> Result<String, String> {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EditAction {
+pub enum EditCommand {
     View,
     Create,
     StrReplace,
@@ -393,7 +393,7 @@ pub enum EditAction {
 
 #[derive(Debug, Deserialize)]
 pub struct EditRequest {
-    pub action: String,
+    pub command: String,
     pub path: String,
     pub file_text: Option<String>,
     pub view_range: Option<Vec<i32>>,
@@ -403,27 +403,27 @@ pub struct EditRequest {
 }
 
 impl EditRequest {
-    fn parse_action(&self) -> Option<EditAction> {
-        match self.action.as_str() {
-            "view" => Some(EditAction::View),
-            "create" => Some(EditAction::Create),
-            "str_replace" => Some(EditAction::StrReplace),
-            "insert" => Some(EditAction::Insert),
-            "undo_edit" => Some(EditAction::UndoEdit),
+    fn parse_command(&self) -> Option<EditCommand> {
+        match self.command.as_str() {
+            "view" => Some(EditCommand::View),
+            "create" => Some(EditCommand::Create),
+            "str_replace" => Some(EditCommand::StrReplace),
+            "insert" => Some(EditCommand::Insert),
+            "undo_edit" => Some(EditCommand::UndoEdit),
             _ => None,
         }
     }
 }
 
 pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
-    println!("Received edit action request: {:?}", req);
+    println!("Received edit command request: {:?}", req);
     let start = std::time::Instant::now();
     
-    let response = match req.parse_action() {
-        Some(action) => {
-            println!("Parsed action: {:?}", action);
-            match action {
-                EditAction::View => {
+    let response = match req.parse_command() {
+        Some(command) => {
+            println!("Parsed command: {:?}", command);
+            match command {
+                EditCommand::View => {
                     println!("Processing view action");
                     match fs::read_to_string(&req.path) {
                         Ok(content) => {
@@ -508,7 +508,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         }
                     }
                 },
-                EditAction::Create => {
+                EditCommand::Create => {
                     println!("Processing create action");
                     if let Some(text) = &req.file_text {
                         println!("Creating file at: {} with content length: {}", req.path, text.len());
@@ -539,7 +539,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         })
                     }
                 },
-                EditAction::StrReplace => {
+                EditCommand::StrReplace => {
                     println!("Processing string replace action");
                     if let (Some(old_str), Some(new_str)) = (&req.old_str, &req.new_str) {
                         match fs::read_to_string(&req.path) {
@@ -583,7 +583,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         })
                     }
                 },
-                EditAction::Insert => {
+                EditCommand::Insert => {
                     println!("Processing insert action");
                     if let (Some(text), Some(line_num)) = (&req.file_text, &req.insert_line) {
                         match fs::read_to_string(&req.path) {
@@ -639,7 +639,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         })
                     }
                 },
-                EditAction::UndoEdit => {
+                EditCommand::UndoEdit => {
                     println!("Processing undo edit action");
                     let backup_path = format!("{}.bak", req.path);
                     if fs::metadata(&backup_path).is_ok() {
@@ -666,16 +666,16 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
             }
         },
         None => {
-            println!("Invalid action received: {}", req.action);
+            println!("Invalid command received: {}", req.command);
             HttpResponse::BadRequest().json(ActionResponse {
                 r#type: String::from("error"),
                 media_type: String::from("text/plain"),
-                data: String::from("Unsupported edit action"),
+                data: String::from("Unsupported edit command"),
             })
         }
     };
     
-    println!("Edit action completed in {:?}", start.elapsed());
+    println!("Edit command completed in {:?}", start.elapsed());
     response
 }
 
@@ -686,7 +686,7 @@ async fn health_check() -> impl Responder {
         .json(ActionResponse {
             r#type: String::from("success"),
             media_type: String::from("text/plain"),
-            data: String::from("Service is running"),
+            data: String::from("Service is running")
         })
 }
 
@@ -698,7 +698,7 @@ async fn computer_endpoint(req: web::Json<ActionRequest>) -> impl Responder {
 
 #[post("/edit")]
 async fn edit_endpoint(req: web::Json<EditRequest>) -> impl Responder {
-    log::info!("Edit action received: {:?}", req);
+    log::info!("Edit command received: {:?}", req);
     handle_edit_action(req).await
 }
 

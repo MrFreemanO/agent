@@ -3,15 +3,34 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=../docker/desktop/Dockerfile");
+    println!("cargo:rerun-if-changed=../docker/desktop/Dockerfile.dev");
     println!("cargo:rerun-if-changed=../docker/desktop/supervisord.conf");
     println!("cargo:rerun-if-changed=../docker/desktop/startup.sh");
+    println!("cargo:rerun-if-changed=../docker/desktop/startup.dev.sh");
+
+    // 判断是否为开发环境
+    let is_dev = std::env::var("CARGO_PROFILE").unwrap_or_default() == "debug";
+    
+    let dockerfile = if is_dev {
+        "../docker/desktop/Dockerfile.dev"
+    } else {
+        "../docker/desktop/Dockerfile"
+    };
+
+    let image_tag = if is_dev {
+        "consoleai/desktop:dev"
+    } else {
+        "consoleai/desktop:latest"
+    };
 
     // 构建Docker镜像
     let docker_build = Command::new("docker")
         .args(&[
             "build",
             "-t",
-            "consoleai/desktop:latest",
+            image_tag,
+            "-f",
+            dockerfile,
             "../docker/desktop",
         ])
         .status()
@@ -30,7 +49,7 @@ fn main() {
             "save",
             "-o",
             image_path.to_str().unwrap(),
-            "consoleai/desktop:latest",
+            image_tag,
         ])
         .status()
         .expect("Failed to save Docker image");

@@ -6,10 +6,10 @@ mod docker;
 use docker::DockerManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use reqwest;
-use serde::{Deserialize, Serialize};
 use tauri;
 
+// 确保 DockerState 是 Send + Sync
+#[derive(Debug)]
 struct DockerState {
     container_id: String,
     app_name: String,
@@ -30,17 +30,38 @@ impl Default for DockerState {
 async fn start_container(
     state: tauri::State<'_, Arc<Mutex<DockerState>>>,
 ) -> Result<String, String> {
-    println!("Starting container...");
-    let docker_manager = DockerManager::new().await.map_err(|e| {
-        let error_msg = format!("Failed to create DockerManager: {}", e);
-        println!("{}", error_msg);
-        error_msg
-    })?;
+    let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
     
-    // Ensure image exists
+    // 检查是否已有运行的容器
+    match docker_manager.list_containers().await {
+        Ok(containers) => {
+            for container in containers {
+                if let Some(names) = container.names {
+                    if names.iter().any(|name| name.contains("consoley")) {
+                        if let Some(id) = container.id {
+                            println!("Found existing container: {}", id);   
+                            let mut state_guard = state.lock().await;
+                            state_guard.container_id = id.clone();
+                            state_guard.status = "running".to_string();
+                            return Ok(id);
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => return Err(e.to_string()),
+    }
+
+    // 确保镜像存在
     println!("Checking/building Docker image...");
+    let image_tag = if cfg!(debug_assertions) {
+        "consoleai/desktop:dev"
+    } else {
+        "consoleai/desktop:latest"
+    };
+    
     docker_manager
-        .ensure_image("consoleai/desktop:latest")
+        .ensure_image(image_tag)
         .await
         .map_err(|e| {
             let error_msg = format!("Failed to ensure image: {}", e);
@@ -48,21 +69,21 @@ async fn start_container(
             error_msg
         })?;
     
-    // Create and start container
+    // 创建并启动容器
     println!("Creating and starting container...");
-    let container_id = docker_manager
+    let container_id = Arc::clone(&docker_manager)
         .create_and_start_container()
         .await
-        .map_err(|e| {
-            let error_msg = format!("Failed to create/start container: {}", e);
-            println!("{}", error_msg);
-            error_msg
-        })?;
+        .map_err(|e| e.to_string())?;
     
     println!("Container started successfully with ID: {}", container_id);
-    let mut state = state.lock().await;
-    state.container_id = container_id.clone();
-    state.status = "running".to_string();
+    
+    // 将 MutexGuard 的作用域限制在一个代码块内
+    {
+        let mut state_guard = state.lock().await;
+        state_guard.container_id = container_id.clone();
+        state_guard.status = "running".to_string();
+    }
     
     Ok(container_id)
 }

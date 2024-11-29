@@ -72,8 +72,8 @@ async fn wait_for_service() {
     panic!("Service did not become ready in time");
 }
 
-async fn test_edit_action(
-    action: &str,
+async fn test_edit_command(
+    command: &str,
     path: &str,
     file_text: Option<&str>,
     view_range: Option<Vec<i32>>,
@@ -84,7 +84,7 @@ async fn test_edit_action(
     let client = reqwest::Client::new();
     
     let mut payload = json!({
-        "action": action,
+        "command": command,
         "path": path
     });
     
@@ -144,7 +144,7 @@ async fn test_computer_actions() {
 async fn test_keyboard_actions() {
     let keyboard_tests: Vec<(&str, Option<&str>, Option<Vec<i32>>, bool)> = vec![
         ("key", Some("Return"), None::<Vec<i32>>, true),
-        ("type", Some("Hello World"), None::<Vec<i32>>, true),
+        ("type", Some("Hello World!"), None::<Vec<i32>>, true),
         ("key", None, None::<Vec<i32>>, false),
         ("type", None, None::<Vec<i32>>, false),
     ];
@@ -229,7 +229,7 @@ async fn test_file_creation_and_view() {
     let content = "Hello\nWorld\nTest";
     
     // Test file creation
-    let response = test_edit_action(
+    let response = test_edit_command(
         "create",
         test_file,
         Some(content),
@@ -242,7 +242,7 @@ async fn test_file_creation_and_view() {
     assert_eq!(response.status().as_u16(), 200, "File creation should succeed");
     
     // Test file view
-    let response = test_edit_action(
+    let response = test_edit_command(
         "view",
         test_file,
         None,
@@ -257,7 +257,7 @@ async fn test_file_creation_and_view() {
     assert!(body["data"].as_str().unwrap().contains("Hello"), "View should show file content");
     
     // Test view with range
-    let response = test_edit_action(
+    let response = test_edit_command(
         "view",
         test_file,
         None,
@@ -280,7 +280,7 @@ async fn test_file_modifications() {
     let initial_content = "Line 1\nLine 2\nLine 3";
     
     // Create test file
-    let response = test_edit_action(
+    let response = test_edit_command(
         "create",
         test_file,
         Some(initial_content),
@@ -292,7 +292,7 @@ async fn test_file_modifications() {
     assert_eq!(response.status().as_u16(), 200);
     
     // Test str_replace
-    let response = test_edit_action(
+    let response = test_edit_command(
         "str_replace",
         test_file,
         None,
@@ -305,7 +305,7 @@ async fn test_file_modifications() {
     assert_eq!(response.status().as_u16(), 200, "String replacement should succeed");
     
     // Test insert
-    let response = test_edit_action(
+    let response = test_edit_command(
         "insert",
         test_file,
         Some("Inserted Line"),
@@ -318,7 +318,7 @@ async fn test_file_modifications() {
     assert_eq!(response.status().as_u16(), 200, "Line insertion should succeed");
     
     // Test undo_edit
-    let response = test_edit_action(
+    let response = test_edit_command(
         "undo_edit",
         test_file,
         None,
@@ -336,8 +336,8 @@ async fn test_edit_error_cases() {
     wait_for_service().await;
     
     let test_cases = vec![
-        // Invalid action
-        ("invalid_action", "/tmp/test.txt", None, None, None, None, None, 400),
+        // Invalid command
+        ("invalid_command", "/tmp/test.txt", None, None, None, None, None, 400),
         // Missing file_text for create
         ("create", "/tmp/test.txt", None, None, None, None, None, 400),
         // Invalid view range
@@ -348,9 +348,9 @@ async fn test_edit_error_cases() {
         ("insert", "/tmp/test.txt", None, None, None, Some("text"), Some(-1), 400),
     ];
     
-    for (action, path, file_text, view_range, old_str, new_str, insert_line, expected_status) in test_cases {
-        let response = test_edit_action(
-            action,
+    for (command, path, file_text, view_range, old_str, new_str, insert_line, expected_status) in test_cases {
+        let response = test_edit_command(
+            command,
             path,
             file_text,
             view_range,
@@ -363,7 +363,7 @@ async fn test_edit_error_cases() {
             response.status().as_u16(),
             expected_status,
             "Test case for {} should return status code {}",
-            action,
+            command,
             expected_status
         );
     }
