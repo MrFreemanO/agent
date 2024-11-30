@@ -1,0 +1,37 @@
+version: '3'
+services:
+  consoley:
+    build:
+      context: ./docker/desktop
+      dockerfile: Dockerfile.alpine  # 改用 Alpine 版本的 Dockerfile
+    image: consoleai/desktop:dev # 修改镜像标签
+    privileged: true
+    working_dir: /app/api-server
+    ports:
+      - "5800:5900"  # VNC
+      - "6070:6080"  # noVNC web访问
+      - "8090:8080"  # API服务
+      - "9229:9229"  # Debug
+    environment:
+      - DISPLAY=:1
+      - RUST_LOG=debug
+      - WIDTH=1024
+      - HEIGHT=768
+      - USERNAME=consoley
+      - HOME=/home/consoley
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./docker/desktop/api-server:/app/api-server:rw
+      - ./docker/desktop/desktop-config:/home/consoley/.config:rw
+      - ./docker/desktop/image/.config/tint2:/home/consoley/.config/tint2:rw
+      # 添加 cargo cache 持久化
+      - cargo-cache:/home/consoley/.cargo/registry
+      - cargo-target:/app/api-server/target
+    cap_add:
+      - SYS_ADMIN
+    command: ["sh", "-c", "chmod +x /startup.dev.sh && /startup.dev.sh"]
+    user: root
+
+volumes:
+  cargo-cache:
+  cargo-target:

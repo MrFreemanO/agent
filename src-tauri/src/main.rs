@@ -226,10 +226,10 @@ async fn setup_docker(app: &tauri::AppHandle) -> Result<(), String> {
     
     // 确保镜像存在
     let image_tag = if cfg!(debug_assertions) {
-        println!("Debug mode detected, using dev image 2");
+        println!("Debug mode detected, using dev image");
         "consoleai/desktop:dev"
     } else {
-        println!("Release mode detected, using latest image 2");
+        println!("Release mode detected, using latest image");
         "consoleai/desktop:latest"
     };
     
