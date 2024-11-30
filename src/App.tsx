@@ -7,9 +7,8 @@ import * as Switch from "@radix-ui/react-switch";
 import './App.css';
 
 function App() {
-  // 容器ID
-  const [containerId, setContainerId] = useState<string>('');
-
+  // 注释掉未使用的状态变量
+  // const [containerId, setContainerId] = useState<string>('');
   const [status, setStatus] = useState<string>('stopped');
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -26,8 +25,8 @@ function App() {
   const startContainer = async () => {
     try {
       setLoading(true);
-      const id = await invoke('start_container');
-      setContainerId(id as string);
+      await invoke('start_container');
+      // setContainerId(id as string);  // 注释掉未使用的 setter
       setStatus('running');
 
       // 等待noVNC服务启动

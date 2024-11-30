@@ -40,22 +40,27 @@ fn main() {
         panic!("Docker build failed");
     }
 
-    // 导出Docker镜像
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let image_path = Path::new(&out_dir).join("desktop.tar");
+    // 只在生产环境打包时保存镜像
+    if !is_dev {
+        let out_dir = std::env::var("OUT_DIR").unwrap();
+        let resources_dir = Path::new(&out_dir).join("resources");
+        std::fs::create_dir_all(&resources_dir).unwrap();
+        
+        let image_path = resources_dir.join("desktop.tar");
+        let docker_save = Command::new("docker")
+            .args(&[
+                "save",
+                "-o",
+                image_path.to_str().unwrap(),
+                image_tag,
+            ])
+            .status()
+            .expect("Failed to save Docker image");
 
-    let docker_save = Command::new("docker")
-        .args(&[
-            "save",
-            "-o",
-            image_path.to_str().unwrap(),
-            image_tag,
-        ])
-        .status()
-        .expect("Failed to save Docker image");
-
-    if !docker_save.success() {
-        panic!("Docker save failed");
+        if !docker_save.success() {
+            panic!("Docker save failed");
+        }
     }
-    tauri_build::build();
+
+    tauri_build::build()
 }

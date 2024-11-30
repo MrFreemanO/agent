@@ -141,7 +141,7 @@ USER $USERNAME
 WORKDIR $HOME
 
 # 暴露端口
-EXPOSE 5900 6080
+EXPOSE 5900 6080 8080
 
 # 启动命令
 CMD ["/startup.sh"]
