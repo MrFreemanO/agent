@@ -12,6 +12,7 @@ services:
     environment:
       - DISPLAY=:1
       - RUST_LOG=debug
+      - RUST_BACKTRACE=1
       - WIDTH=1024
       - HEIGHT=768
     volumes:
