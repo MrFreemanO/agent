@@ -2,7 +2,7 @@ version: '3'
 services:
   consoley:
     build:
-      context: .
+      context: ./docker/desktop
       dockerfile: Dockerfile
     privileged: true
     ports:
@@ -11,11 +11,10 @@ services:
       - "8090:8080"  # API服务
     environment:
       - DISPLAY=:1
-      - RUST_LOG=debug  # 开发模式下启用详细日志
+      - RUST_LOG=debug
       - WIDTH=1024
       - HEIGHT=768
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./docker/desktop/api-server:/app/api-server  # 开发模式下映射本地源代码
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
     cap_add:
       - SYS_ADMIN

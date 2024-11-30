@@ -686,7 +686,7 @@ async fn health_check() -> impl Responder {
         .json(ActionResponse {
             r#type: String::from("success"),
             media_type: String::from("text/plain"),
-            data: String::from("Service is running")
+            data: String::from("Service is running...")
         })
 }
 

@@ -15,10 +15,7 @@
         "title": "ConsoleY",
         "width": 1024,
         "height": 768,
-        "resizable": false,
-        "decorations": true,
-        "fullscreen": false,
-        "titleBarStyle": "Visible"
+        "resizable": false
       }
     ],
     "security": {
