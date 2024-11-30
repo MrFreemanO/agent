@@ -12,14 +12,17 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "ConsoleY",
         "width": 1024,
         "height": 768,
-        "resizable": false
+        "resizable": false,
+        "devtools": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'"
+      "csp": "default-src 'self' http://localhost:* 'unsafe-eval' 'unsafe-inline'; img-src 'self' http://localhost:* data: blob: 'unsafe-inline'; connect-src 'self' http://localhost:* ws://localhost:*; frame-src 'self' http://localhost:*",
+      "dangerousDisableAssetCspModification": true
     }
   },
   "bundle": {

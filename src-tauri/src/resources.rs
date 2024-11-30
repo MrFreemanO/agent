@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use tokio::fs;
-use tauri::utils::platform::{app_local_data_dir, resource_dir};
+use tauri::Manager;
 use tokio::io::AsyncReadExt;
 
-pub async fn extract_docker_image() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let app_dir = app_local_data_dir().ok_or("Failed to get app data directory")?;
+pub async fn extract_docker_image(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let app_dir = app.path().app_local_data_dir()
+        .expect("Failed to get app data directory");
     
     let image_dir = app_dir.join("resources");
     let image_path = image_dir.join("desktop.tar");
@@ -24,14 +25,15 @@ pub async fn extract_docker_image() -> Result<PathBuf, Box<dyn std::error::Error
     fs::create_dir_all(&image_dir).await?;
 
     // 从应用资源目录中读取 desktop.tar
-    let resource_dir = resource_dir().ok_or("Failed to get resource directory")?;
-    println!("Looking for desktop.tar in resource directory: {:?}", resource_dir);
-    
-    let bundled_image_path = resource_dir.join("desktop.tar");
-    println!("Bundled image path: {:?}", bundled_image_path);
+    let resource_dir = app.path().resource_dir()
+        .expect("Failed to get resource directory");
+
+    // 修改这里：检查 resources 子目录
+    let bundled_image_path = resource_dir.join("resources").join("desktop.tar");
+    println!("Looking for desktop.tar in: {:?}", bundled_image_path);
 
     if !bundled_image_path.exists() {
-        return Err("Bundled desktop.tar not found".into());
+        return Err(format!("Bundled desktop.tar not found at {:?}", bundled_image_path).into());
     }
 
     // 读取并写入文件

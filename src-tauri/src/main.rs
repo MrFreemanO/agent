@@ -8,7 +8,7 @@ use docker::DockerManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri;
-use tauri::Manager;
+use tauri::{Manager, RunEvent, WindowEvent, Emitter};
 
 // 确保 DockerState 是 Send + Sync
 #[derive(Debug)]
@@ -30,6 +30,7 @@ impl Default for DockerState {
 
 #[tauri::command]
 async fn start_container(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<Mutex<DockerState>>>,
 ) -> Result<String, String> {
     let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
@@ -57,12 +58,14 @@ async fn start_container(
     // 确保镜像存在
     println!("Checking/building Docker image...");
     let image_tag = if cfg!(debug_assertions) {
+        println!("Debug mode detected, using dev image");
         "consoleai/desktop:dev"
     } else {
+        println!("Release mode detected, using latest image");
         "consoleai/desktop:latest"
     };
     
-    if let Err(e) = docker_manager.ensure_image(image_tag).await {
+    if let Err(e) = docker_manager.ensure_image(&app, image_tag).await {
         return Err(e.to_string());
     }
     
@@ -103,6 +106,9 @@ async fn start_container(
     if let Err(e) = check_api.await {
         return Err(e);
     }
+    
+    // 发送服务就绪事件
+    app.emit("vnc-ready", ()).map_err(|e| e.to_string())?;
     
     Ok(container_id)
 }
@@ -171,51 +177,67 @@ async fn get_app_info(
 }
 
 fn main() {
-    tauri::Builder::default()
+    let mut app = tauri::Builder::default()
         .setup(|app| {
-            // 使用新的 API 获取资源路径
-            let resource_path = app.handle().path().resource_dir()
-                .expect("Failed to get resource dir");
-            
-            println!("Resource path: {:?}", resource_path);
+            let app_handle = app.handle();
             
             // 启动容器管理
+            let app_handle_clone = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = setup_docker().await {
+                if let Err(e) = setup_docker(&app_handle_clone).await {
                     eprintln!("Failed to setup Docker: {}", e);
                 }
             });
             
             Ok(())
         })
-        .manage(Arc::new(Mutex::new(DockerState::default())))  // 添加状态管理
+        .manage(Arc::new(Mutex::new(DockerState::default())))
         .invoke_handler(tauri::generate_handler![
             start_container,
             stop_container,
             get_container_logs,
             restart_container,
             get_app_info
-        ])  // 注册所有命令
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // 添加事件处理
+    app.run(|app_handle, event| {
+        if let RunEvent::WindowEvent { label: _, event: WindowEvent::CloseRequested { .. }, .. } = event {
+            // 执行清理
+            tauri::async_runtime::block_on(async {
+                if let Err(e) = cleanup_docker().await {
+                    eprintln!("Failed to cleanup Docker: {}", e);
+                }
+            });
+        }
+    });
 }
 
-async fn setup_docker() -> Result<(), String> {
+async fn setup_docker(app: &tauri::AppHandle) -> Result<(), String> {
     println!("Initializing Docker setup...");
     
-    let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
+    let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| {
+        let err_msg = format!("Failed to create Docker manager: {}", e);
+        println!("{}", err_msg);
+        err_msg
+    })?);
     
     // 确保镜像存在
     let image_tag = if cfg!(debug_assertions) {
+        println!("Debug mode detected, using dev image 2");
         "consoleai/desktop:dev"
     } else {
+        println!("Release mode detected, using latest image 2");
         "consoleai/desktop:latest"
     };
     
     println!("Ensuring Docker image exists: {}", image_tag);
-    if let Err(e) = docker_manager.ensure_image(image_tag).await {
-        eprintln!("Failed to ensure Docker image: {:?}", e);
-        return Err(format!("{:?}", e));
+    if let Err(e) = docker_manager.ensure_image(app, image_tag).await {
+        let err_msg = format!("Failed to ensure Docker image: {:?}", e);
+        println!("{}", err_msg);
+        return Err(err_msg);
     }
     
     // 创建并启动容器
@@ -223,11 +245,21 @@ async fn setup_docker() -> Result<(), String> {
     match docker_manager.create_and_start_container().await {
         Ok(container_id) => {
             println!("Container started successfully with ID: {}", container_id);
+            
+            // 发送服务就绪事件
+            app.emit("vnc-ready", ()).map_err(|e| e.to_string())?;
+            
             Ok(())
         }
         Err(e) => {
-            eprintln!("Failed to start container: {:?}", e);
-            Err(format!("{:?}", e))
+            let err_msg = format!("Failed to start container: {:?}", e);
+            println!("{}", err_msg);
+            Err(err_msg)
         }
     }
+}
+
+async fn cleanup_docker() -> Result<(), String> {
+    let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
+    docker_manager.cleanup().await.map_err(|e| e.to_string())
 }

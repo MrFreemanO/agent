@@ -1,99 +1,112 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import * as Switch from "@radix-ui/react-switch";
-// import * as Select from "@radix-ui/react-select";
-// import { CheckIcon, ChevronDownIcon } from "@radix-ui/react-icons";
 
 import './App.css';
 
 function App() {
-  // 注释掉未使用的状态变量
-  // const [containerId, setContainerId] = useState<string>('');
   const [status, setStatus] = useState<string>('stopped');
-
   const [loading, setLoading] = useState<boolean>(false);
-
-  // const [isSide, setIsSide] = useState(false);
-
-  // const [active, setActive] = useState(1);
-
   const [checked, setChecked] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 30;
 
-  // const [value, setValue] = useState('');
-
-  // 启动容器
-  const startContainer = async () => {
+  // 检查端口是否可访问
+  const checkPort = async (port: number): Promise<boolean> => {
     try {
-      setLoading(true);
-      await invoke('start_container');
-      // setContainerId(id as string);  // 注释掉未使用的 setter
-      setStatus('running');
-
-      // 等待noVNC服务启动
-      setTimeout(async () => {
-        const iframe = document.getElementById('vnc-iframe') as HTMLIFrameElement;
-        if (iframe) {
-          iframe.src = 'http://localhost:6070/vnc.html?autoconnect=true&resize=scale';
-        }
-      }, 2000);
-
+      const response = await fetch(`http://localhost:${port}/vnc.html`, {
+        method: 'HEAD',
+        mode: 'no-cors'
+      });
+      console.log(`Port ${port} check response:`, response.type);
+      return true;
     } catch (error) {
+      console.log(`Port ${port} not accessible:`, error);
+      return false;
+    }
+  };
+
+  const checkAndRefreshVnc = async () => {
+    console.log(`Checking VNC service (attempt ${retryCount + 1}/${maxRetries})...`);
+    
+    try {
+      const isNoVNCReady = await checkPort(6070);
+      
+      if (isNoVNCReady) {
+        console.log('noVNC service is ready, updating status...');
+        setStatus('running');
+        setLoading(false);
+      } else {
+        console.log('noVNC service not ready yet, retrying...');
+        retryConnection();
+      }
+    } catch (error) {
+      console.error('Error checking VNC service:', error);
+      retryConnection();
+    }
+  };
+
+  const retryConnection = () => {
+    if (retryCount < maxRetries) {
+      setRetryCount(prev => prev + 1);
+      setTimeout(checkAndRefreshVnc, 2000);
+    } else {
+      console.error('Failed to connect to VNC after maximum retries');
       setStatus('error');
-    } finally {
       setLoading(false);
     }
   };
 
-  // 停止容器
-  // const stopContainer = async () => {
-  //   try {
-  //     setLoading(true);
-  //     await invoke('stop_container');
-  //     setContainerId('');
-  //     setStatus('stopped');
-  //     const iframe = document.getElementById('vnc-iframe') as HTMLIFrameElement;
-  //     if (iframe) {
-  //       iframe.src = 'about:blank';
-  //     }
-  //   } catch (error) {
-  //     console.error('Failed to stop container:', error);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
-  // 重启容器
-  // const restartContainer = async () => {
-  //   try {
-  //     setLoading(true);
-  //     await invoke('restart_container');
-  //     // 等待noVNC服务重启
-  //     setTimeout(() => {
-  //       const iframe = document.getElementById('vnc-iframe') as HTMLIFrameElement;
-  //       if (iframe) {
-  //         iframe.src = 'http://localhost:6070/vnc.html?autoconnect=true&resize=scale';
-  //       }
-  //     }, 2000);
-  //   } catch (error) {
-  //     console.error('Failed to restart container:', error);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
-  useEffect(() => {
-    startContainer();
-  }, [])
-
-  // 允许人类操作界面
-  const onCheckedChange = (checked: boolean) => {
-    setChecked(checked);
+  const startContainer = async () => {
+    try {
+      setLoading(true);
+      setRetryCount(0);
+      console.log("Starting container...");
+      
+      await invoke('start_container');
+      console.log("Container started successfully");
+      
+    } catch (error) {
+      console.error('Container start error:', error);
+      setStatus('error');
+      setLoading(false);
+    }
   };
 
-  // 选择分辨率
-  // const onResolutionChange = (value: string) => {
-  //   setValue(value);
-  // }
+  // 监听后端事件
+  useEffect(() => {
+    const unlisten = listen('vnc-ready', () => {
+      console.log('Received vnc-ready event from backend');
+      checkAndRefreshVnc();
+    });
+
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, []);
+
+  // 定期检查服务状态
+  useEffect(() => {
+    let intervalId: number;
+
+    if (status !== 'running' && !loading) {
+      intervalId = window.setInterval(() => {
+        checkAndRefreshVnc();
+      }, 5000);
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [status, loading]);
+
+  // 组件挂载时自动启动容器
+  useEffect(() => {
+    startContainer();
+  }, []);
 
   return (
     <div className="container">
@@ -103,113 +116,45 @@ function App() {
           <div className='container_option_content_item'>
             <div className='container_option_content_item_label'>允许人类操作界面</div>
             <div className='container_option_content_item_com'>
-              <Switch.Root className={checked ? "SwitchRoot" : "SwitchNoRoot"} checked={checked} onCheckedChange={(checked) => onCheckedChange(checked)}>
+              <Switch.Root 
+                className={checked ? "SwitchRoot" : "SwitchNoRoot"} 
+                checked={checked} 
+                onCheckedChange={setChecked}
+              >
                 <Switch.Thumb className="SwitchThumb" />
               </Switch.Root>
             </div>
           </div>
-          {/* <div className='title_container_right' onClick={() => setIsSide(!isSide)}>
-            <svg className="icon_arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-              <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M5 7h14M5 12h14M5 17h14" />
-            </svg>
-          </div> */}
         </div>
         <div className="vnc-container">
-          {!checked ? <div className="vnc-container_model" /> : ''}
-          {
-            loading ?
-              <div className="placeholder">Loading...</div> :
-              status === 'running' ? (
-                <iframe
-                  id="vnc-iframe"
-                  title="ConsoleY Remote Desktop"
-                  src="about:blank"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    border: 'none',
-                  }}
-                />
-              ) : (
-                <div className="placeholder">
-                  Remote desktop will appear here when started
-                </div>
-              )
-          }
+          {!checked && <div className="vnc-container_model" />}
+          {loading ? (
+            <div className="placeholder">
+              Loading... {retryCount > 0 && `(Attempt ${retryCount}/${maxRetries})`}
+              <div>Status: {status}</div>
+            </div>
+          ) : status === 'running' ? (
+            <iframe
+              id="vnc-iframe"
+              title="ConsoleY Remote Desktop"
+              src={`http://localhost:6070/vnc.html?autoconnect=true&resize=scale&password=&t=${new Date().getTime()}`}
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+              }}
+            />
+          ) : (
+            <div className="placeholder">
+              {status === 'error' ? 
+                'Failed to connect to remote desktop' : 
+                'Remote desktop will appear here when started'}
+            </div>
+          )}
         </div>
       </div>
-      {/* {
-        // isSide ? <div className='side' /> : ''
-      } */}
-      {/* {
-        // isSide ? <div className='container_option'>
-        //   <div className='container_option_tab'>
-        //     <div className={active === 1 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(1)}>设置</div>
-        //     <div className={active === 2 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(2)}>调试</div>
-        //     <div className={active === 3 ? "container_option_tab_active" : "container_option_tab_item"} onClick={() => setActive(3)}>应用程序</div>
-        //   </div>
-        //   <div className='container_option_content'>
-        //     {active === 1 ?
-        //       <div className='container_option_content_box'>
-        //         <div className='container_option_content_item'>
-        //           <div className='container_option_content_item_label'>允许人类操作界面</div>
-        //           <div className='container_option_content_item_com'>
-        //             <Switch.Root className={checked ? "SwitchRoot" : "SwitchNoRoot"} checked={checked} onCheckedChange={(checked) => onCheckedChange(checked)}>
-        //               <Switch.Thumb className="SwitchThumb" />
-        //             </Switch.Root>
-        //           </div>
-        //         </div>
-        //         <div className='container_option_content_item'>
-        //           <div className='container_option_content_item_label'>桌面分辨率</div>
-        //           <div className='container_option_content_item_com'>
-        //             <Select.Root value={value} onValueChange={(value) => onResolutionChange(value)}>
-        //               <Select.Trigger className="SelectTrigger">
-        //                 <Select.Value placeholder="Select a resolution…" />
-        //                 <Select.Icon className="SelectIcon">
-        //                   <ChevronDownIcon />
-        //                 </Select.Icon>
-        //               </Select.Trigger>
-        //               <Select.Portal>
-        //                 <Select.Content className="SelectContent">
-        //                   <Select.Viewport className="SelectViewport">
-        //                     <Select.Group>
-        //                       <SelectItem value="1024*768">1024*768</SelectItem>
-        //                       <SelectItem value="1920*1080">1920*1080</SelectItem>
-        //                       <SelectItem value="2560*1440">2560*1440</SelectItem>
-        //                       <SelectItem value="3840*2160">3840*2160</SelectItem>
-        //                     </Select.Group>
-        //                   </Select.Viewport>
-        //                 </Select.Content>
-        //               </Select.Portal>
-        //             </Select.Root>
-        //           </div>
-        //         </div>
-        //       </div>
-        //       : ''}
-        //     {active === 2 ? <div className='container_option_content_box'></div> : ''}
-        //     {active === 3 ? <div className='container_option_content_box'></div> : ''}
-        //   </div>
-        // </div> : ''
-      } */}
     </div>
   );
 }
-
-// const SelectItem = React.forwardRef(
-//   ({ children, ...props }: { children: React.ReactNode, value: string }, forwardedRef) => {
-//     return (
-//       <Select.Item
-//         {...props}
-//         ref={forwardedRef as any}
-//         className="SelectItem"
-//       >
-//         <Select.ItemText>{children}</Select.ItemText>
-//         <Select.ItemIndicator className="SelectItemIndicator">
-//           <CheckIcon />
-//         </Select.ItemIndicator>
-//       </Select.Item>
-//     );
-//   },
-// );
 
 export default App;
