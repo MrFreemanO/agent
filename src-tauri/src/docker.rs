@@ -5,6 +5,8 @@ use futures_util::stream::StreamExt;
 use futures_util::TryStreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::process::Command;
+use crate::resources::extract_docker_image;
 
 #[derive(Debug)]
 pub enum DockerError {
@@ -59,49 +61,41 @@ impl DockerManager {
             .map_err(|e| DockerError::Container(e.to_string()))
     }
 
-    pub async fn ensure_image(&self, image: &str) -> Result<(), DockerError> {
-        // 首先检查本地是否存在镜像
-        let images = self.docker.list_images::<String>(None).await?;
-        let image_exists = images.iter().any(|img| {
-            img.repo_tags
-                .iter()
-                .any(|tag| tag == image)
-        });
+    pub async fn ensure_image(&self, image_tag: &str) -> Result<(), DockerError> {
+        println!("Ensuring Docker image: {}", image_tag);
+        
+        // 检查镜像是否存在
+        let output = Command::new("docker")
+            .args(&["images", "-q", image_tag])
+            .output()
+            .map_err(|e| DockerError::IO(e.to_string()))?;
 
-        if !image_exists {
-            println!("Image not found locally, attempting to build...");
-            // 构建镜像
-            use bollard::image::BuildImageOptions;
-
-            let mut path = std::env::current_dir()?;
-            path.push("docker");
-            path.push("desktop");
-
-            println!("Building from path: {:?}", path);
-
-            let options = BuildImageOptions {
-                dockerfile: "Dockerfile",
-                t: image,
-                rm: true,
-                ..Default::default()
-            };
-
-            let tar_gz = tar_directory(&path)?;
-            let mut build_stream = self.docker.build_image(options, None, Some(tar_gz.into()));
+        if output.stdout.is_empty() {
+            println!("Docker image {} not found, attempting to load from resources...", image_tag);
             
-            while let Some(result) = build_stream.next().await {
-                match result {
-                    Ok(output) => {
-                        if let Some(stream) = output.stream {
-                            print!("{}", stream);
-                        }
+            // 尝试从资源中提取镜像
+            match extract_docker_image().await {
+                Ok(image_path) => {
+                    println!("Loading Docker image from: {:?}", image_path);
+                    
+                    // 加载镜像
+                    let load_status = Command::new("docker")
+                        .args(&["load", "-i", image_path.to_str().unwrap()])
+                        .status()
+                        .map_err(|e| DockerError::IO(e.to_string()))?;
+
+                    if !load_status.success() {
+                        return Err(DockerError::Image("Failed to load Docker image".to_string()));
                     }
-                    Err(e) => {
-                        println!("Build error: {}", e);
-                        return Err(DockerError::Image(e.to_string()));
-                    }
+                    println!("Docker image loaded successfully.");
+                }
+                Err(e) => {
+                    println!("Failed to extract Docker image: {}", e);
+                    return Err(DockerError::Image(format!("Failed to extract Docker image: {}", e)));
                 }
             }
+        } else {
+            println!("Docker image {} already exists.", image_tag);
         }
 
         Ok(())

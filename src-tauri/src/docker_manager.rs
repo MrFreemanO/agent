@@ -1,137 +1,177 @@
-use std::path::PathBuf;
 use std::process::Command;
-use tokio::fs;
-use std::collections::HashMap;
-use std::net::TcpListener;
+use std::path::PathBuf;
+use tokio::time::{sleep, Duration};
+use crate::resources;
+
+#[derive(Debug)]
+pub struct DockerError(pub String);
+
+impl From<std::io::Error> for DockerError {
+    fn from(err: std::io::Error) -> Self {
+        DockerError(err.to_string())
+    }
+}
 
 pub struct DockerManager {
-    image_path: Option<PathBuf>,
-    is_dev: bool,
+    container_name: String,
+    image_tag: String,
 }
 
 impl DockerManager {
-    pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let is_dev = cfg!(debug_assertions);
-        let image_path = if !is_dev {
-            let app_dir = tauri::api::path::app_local_data_dir().unwrap();
-            Some(app_dir.join("resources/desktop.tar"))
-        } else {
-            None
-        };
-        
-        Ok(Self { image_path, is_dev })
-    }
-
-    fn get_image_tag(&self) -> String {
-        if self.is_dev {
-            "consoleai/desktop:dev".to_string()
-        } else {
-            #[cfg(target_arch = "aarch64")]
-            return "consoleai/desktop:latest-arm64".to_string();
-            
-            #[cfg(not(target_arch = "aarch64"))]
-            return "consoleai/desktop:latest".to_string();
+    pub fn new() -> Self {
+        DockerManager {
+            container_name: "consoley_desktop".to_string(),
+            image_tag: "consoleai/desktop:latest".to_string(),
         }
     }
 
-    pub async fn ensure_image(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let image_tag = self.get_image_tag();
-
-        // 检查镜像是否存在
+    // 检查 Docker 是否运行
+    pub async fn check_docker_running(&self) -> Result<bool, DockerError> {
         let output = Command::new("docker")
-            .args(&["images", "-q", image_tag])
+            .args(["info"])
+            .output()?;
+        
+        Ok(output.status.success())
+    }
+
+    // 检查镜像是否存在
+    pub async fn check_image_exists(&self) -> Result<bool, DockerError> {
+        let output = Command::new("docker")
+            .args(["images", "-q", &self.image_tag])
             .output()?;
 
-        if output.stdout.is_empty() {
-            if self.is_dev {
-                // 开发环境：使用 docker build
-                let dockerfile = if self.is_dev {
-                    "../docker/desktop/Dockerfile.dev"
-                } else {
-                    "../docker/desktop/Dockerfile"
-                };
+        Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+    }
 
-                let status = Command::new("docker")
-                    .args(&[
-                        "build",
-                        "-t",
-                        image_tag,
-                        "-f",
-                        dockerfile,
-                        "../docker/desktop",
-                    ])
-                    .status()?;
+    // 加载 Docker 镜像
+    pub async fn load_image(&self) -> Result<(), DockerError> {
+        println!("Extracting Docker image...");
+        let image_path = resources::extract_docker_image().await
+            .map_err(|e| DockerError(e.to_string()))?;
 
-                if !status.success() {
-                    return Err("Failed to build Docker image".into());
-                }
-            } else {
-                // 生产环境：从嵌入的tar文件加载
-                if let Some(image_path) = &self.image_path {
-                    // 如果资源目录不存在，创建它
-                    if let Some(parent) = image_path.parent() {
-                        fs::create_dir_all(parent).await?;
-                    }
+        println!("Loading Docker image from {:?}...", image_path);
+        let status = Command::new("docker")
+            .args(["load", "-i", image_path.to_str().unwrap()])
+            .status()?;
 
-                    // 复制嵌入的镜像文件
-                    let embedded_image = include_bytes!(concat!(env!("OUT_DIR"), "/resources/desktop.tar"));
-                    fs::write(image_path, embedded_image).await?;
-
-                    // 导入镜像
-                    let status = Command::new("docker")
-                        .args(&[
-                            "load",
-                            "-i",
-                            image_path.to_str().unwrap(),
-                        ])
-                        .status()?;
-
-                    if !status.success() {
-                        return Err("Failed to load Docker image".into());
-                    }
-                }
-            }
+        if !status.success() {
+            return Err(DockerError("Failed to load Docker image".to_string()));
         }
 
         Ok(())
     }
 
-    pub async fn create_and_start_container(&self) -> Result<String, DockerError> {
-        // 创建容器配置
-        let mut port_bindings = HashMap::new();
-        
-        // VNC端口映射
-        let binding5900 = vec![PortBinding {
-            host_ip: Some(String::from("0.0.0.0")),
-            host_port: Some(String::from("5800")),
-        }];
-        
-        // noVNC端口映射
-        let binding6080 = vec![PortBinding {
-            host_ip: Some(String::from("0.0.0.0")),
-            host_port: Some(String::from("6070")),
-        }];
-        
-        // API服务端口映射 - 修改这里
-        let binding8080 = vec![PortBinding {
-            host_ip: Some(String::from("0.0.0.0")),
-            host_port: Some(String::from("8090")),
-        }];
+    // 检查容器是否存在
+    pub async fn check_container_exists(&self) -> Result<bool, DockerError> {
+        let output = Command::new("docker")
+            .args(["ps", "-a", "-q", "-f", &format!("name={}", self.container_name)])
+            .output()?;
 
-        port_bindings.insert(String::from("5900/tcp"), Some(binding5900));
-        port_bindings.insert(String::from("6080/tcp"), Some(binding6080));
-        port_bindings.insert(String::from("8080/tcp"), Some(binding8080));  // 确保这里的key是 "8080/tcp"
+        Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+    }
 
-        // 创建容器
-        let container_id = Command::new("docker")
-            .args(&["run", "-d", "--name", "desktop", "-p", "5900:5800", "-p", "6080:6070", "-p", "8080:8090", self.get_image_tag()])
-            .output()?
-            .stdout;
+    // 创建容器
+    pub async fn create_container(&self) -> Result<(), DockerError> {
+        println!("Creating Docker container...");
+        let status = Command::new("docker")
+            .args([
+                "create",
+                "--name", &self.container_name,
+                "-p", "5800:5900",  // VNC
+                "-p", "6070:6080",  // noVNC
+                "-p", "8090:8080",  // API server
+                "--privileged",
+                "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw",
+                &self.image_tag,
+            ])
+            .status()?;
 
-        // 明确绑定到所有接口
-        let listener = TcpListener::bind("0.0.0.0:8080").expect("Failed to bind to port 8080");
-        log::info!("Listening on http://0.0.0.0:8080");
+        if !status.success() {
+            return Err(DockerError("Failed to create container".to_string()));
+        }
 
-        Ok(String::from_utf8(container_id).unwrap())
+        Ok(())
+    }
+
+    // 启动容器
+    pub async fn start_container(&self) -> Result<(), DockerError> {
+        println!("Starting Docker container...");
+        let status = Command::new("docker")
+            .args(["start", &self.container_name])
+            .status()?;
+
+        if !status.success() {
+            return Err(DockerError("Failed to start container".to_string()));
+        }
+
+        // 等待容器完全启动
+        sleep(Duration::from_secs(2)).await;
+
+        Ok(())
+    }
+
+    // 停止容器
+    pub async fn stop_container(&self) -> Result<(), DockerError> {
+        println!("Stopping Docker container...");
+        let status = Command::new("docker")
+            .args(["stop", &self.container_name])
+            .status()?;
+
+        if !status.success() {
+            return Err(DockerError("Failed to stop container".to_string()));
+        }
+
+        Ok(())
+    }
+
+    // 删除容器
+    pub async fn remove_container(&self) -> Result<(), DockerError> {
+        println!("Removing Docker container...");
+        let status = Command::new("docker")
+            .args(["rm", "-f", &self.container_name])
+            .status()?;
+
+        if !status.success() {
+            return Err(DockerError("Failed to remove container".to_string()));
+        }
+
+        Ok(())
+    }
+
+    // 确保容器运行
+    pub async fn ensure_container_running(&self) -> Result<(), DockerError> {
+        // 检查 Docker 是否运行
+        if !self.check_docker_running().await? {
+            return Err(DockerError("Docker is not running".to_string()));
+        }
+
+        // 检查镜像是否存在，不存在则加载
+        if !self.check_image_exists().await? {
+            self.load_image().await?;
+        }
+
+        // 检查容器是否存在，存在则删除
+        if self.check_container_exists().await? {
+            self.remove_container().await?;
+        }
+
+        // 创建并启动容器
+        self.create_container().await?;
+        self.start_container().await?;
+
+        Ok(())
+    }
+
+    // 获取容器状态
+    pub async fn get_container_status(&self) -> Result<String, DockerError> {
+        let output = Command::new("docker")
+            .args(["inspect", "-f", "{{.State.Status}}", &self.container_name])
+            .output()?;
+
+        if !output.status.success() {
+            return Ok("not_found".to_string());
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 } 

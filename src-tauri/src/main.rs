@@ -2,11 +2,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod docker;
+mod resources;
 
 use docker::DockerManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri;
+use tauri::Manager;
 
 // 确保 DockerState 是 Send + Sync
 #[derive(Debug)]
@@ -60,29 +62,46 @@ async fn start_container(
         "consoleai/desktop:latest"
     };
     
-    docker_manager
-        .ensure_image(image_tag)
-        .await
-        .map_err(|e| {
-            let error_msg = format!("Failed to ensure image: {}", e);
-            println!("{}", error_msg);
-            error_msg
-        })?;
+    if let Err(e) = docker_manager.ensure_image(image_tag).await {
+        return Err(e.to_string());
+    }
     
     // 创建并启动容器
     println!("Creating and starting container...");
-    let container_id = Arc::clone(&docker_manager)
-        .create_and_start_container()
-        .await
-        .map_err(|e| e.to_string())?;
+    let container_id = match docker_manager.create_and_start_container().await {
+        Ok(id) => id,
+        Err(e) => return Err(e.to_string()),
+    };
     
     println!("Container started successfully with ID: {}", container_id);
     
-    // 将 MutexGuard 的作用域限制在一个代码块内
+    // 更新状态
     {
         let mut state_guard = state.lock().await;
         state_guard.container_id = container_id.clone();
         state_guard.status = "running".to_string();
+    }
+    
+    // 添加API服务检查
+    let check_api = async {
+        let client = reqwest::Client::new();
+        for _ in 0..30 {  // 尝试30次，每次等待1秒
+            match client.get("http://localhost:8090/health").send().await {
+                Ok(response) if response.status().is_success() => {
+                    println!("API server is ready");
+                    return Ok(());
+                }
+                _ => {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
+        Err("API server failed to start".to_string())
+    };
+
+    // 等待API服务就绪
+    if let Err(e) = check_api.await {
+        return Err(e);
     }
     
     Ok(container_id)
@@ -152,21 +171,63 @@ async fn get_app_info(
 }
 
 fn main() {
-    println!("Tauri application starting...");
-
-    // Initialize logging
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
-    
-    // Start Tauri application
     tauri::Builder::default()
-        .manage(Arc::new(Mutex::new(DockerState::default())))
+        .setup(|app| {
+            // 使用新的 API 获取资源路径
+            let resource_path = app.handle().path().resource_dir()
+                .expect("Failed to get resource dir");
+            
+            println!("Resource path: {:?}", resource_path);
+            
+            // 启动容器管理
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = setup_docker().await {
+                    eprintln!("Failed to setup Docker: {}", e);
+                }
+            });
+            
+            Ok(())
+        })
+        .manage(Arc::new(Mutex::new(DockerState::default())))  // 添加状态管理
         .invoke_handler(tauri::generate_handler![
             start_container,
             stop_container,
             get_container_logs,
             restart_container,
-            get_app_info,
-        ])
+            get_app_info
+        ])  // 注册所有命令
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn setup_docker() -> Result<(), String> {
+    println!("Initializing Docker setup...");
+    
+    let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
+    
+    // 确保镜像存在
+    let image_tag = if cfg!(debug_assertions) {
+        "consoleai/desktop:dev"
+    } else {
+        "consoleai/desktop:latest"
+    };
+    
+    println!("Ensuring Docker image exists: {}", image_tag);
+    if let Err(e) = docker_manager.ensure_image(image_tag).await {
+        eprintln!("Failed to ensure Docker image: {:?}", e);
+        return Err(format!("{:?}", e));
+    }
+    
+    // 创建并启动容器
+    println!("Creating and starting container...");
+    match docker_manager.create_and_start_container().await {
+        Ok(container_id) => {
+            println!("Container started successfully with ID: {}", container_id);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Failed to start container: {:?}", e);
+            Err(format!("{:?}", e))
+        }
+    }
 }
