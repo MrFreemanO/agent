@@ -1,11 +1,12 @@
 use bollard::Docker;
-use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, StopContainerOptions};
+use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions, ListContainersOptions};
+use bollard::image::{ListImagesOptions, CreateImageOptions};
 use bollard::models::{HostConfig, PortBinding, ContainerSummary};
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::process::Command;
 use crate::resources::extract_docker_image;
-use futures::StreamExt;
+use bytes::Bytes;
 
 #[derive(Debug)]
 pub enum DockerError {
@@ -59,82 +60,110 @@ impl DockerManager {
             .await
             .map_err(|e| DockerError::Container(e.to_string()))
     }
-
+    
     pub async fn ensure_image(&self, app: &tauri::AppHandle, image_tag: &str) -> Result<(), DockerError> {
         println!("Ensuring Docker image: {}", image_tag);
-        
+    
         // 首先检查并清理已存在的容器
         self.cleanup_existing_container().await?;
-        
-        // 检查镜像是否存在
-        let output = Command::new("docker")
-            .args(&["images", "-q", image_tag])
-            .output()
-            .map_err(|e| DockerError::IO(e.to_string()))?;
-
-        if output.stdout.is_empty() {
+    
+        // 使用 Bollard API 检查镜像是否存在
+        let images = self.docker
+            .list_images(Some(ListImagesOptions::<String> {
+                all: true,
+                filters: {
+                    let mut filters = HashMap::new();
+                    filters.insert("reference".to_string(), vec![image_tag.to_string()]);
+                    filters
+                },
+                ..Default::default()
+            }))
+            .await
+            .map_err(|e| DockerError::Image(e.to_string()))?;
+    
+        if images.is_empty() {
             println!("Docker image {} not found, attempting to load from resources...", image_tag);
-            match extract_docker_image(app).await {
-                Ok(image_path) => {
-                    println!("Loading Docker image from: {:?}", image_path);
-                    let load_status = Command::new("docker")
-                        .args(&["load", "-i", image_path.to_str().unwrap()])
-                        .status()
-                        .map_err(|e| DockerError::IO(e.to_string()))?;
-
-                    if !load_status.success() {
-                        return Err(DockerError::Image("Failed to load Docker image".to_string()));
-                    }
-                    println!("Docker image loaded successfully.");
-                }
-                Err(e) => return Err(DockerError::Image(e.to_string()))
+    
+            let image_path = extract_docker_image(app)
+                .await
+                .map_err(|e| DockerError::IO(e.to_string()))?;
+            
+            println!("Loading Docker image from: {:?}", image_path);
+    
+            let mut file = tokio::fs::File::open(&image_path)
+                .await
+                .map_err(|e| DockerError::IO(e.to_string()))?;
+            
+            let mut image_data = Vec::new();
+            tokio::io::copy(&mut file, &mut image_data)
+                .await
+                .map_err(|e| DockerError::IO(e.to_string()))?;
+    
+            let mut stream = self.docker
+                .create_image(
+                    Some(CreateImageOptions {
+                        from_src: "-",
+                        ..Default::default()
+                    }),
+                    Some(Bytes::from(image_data)),
+                    None,
+                );
+    
+            while let Some(result) = stream.next().await {
+                result.map_err(|e| DockerError::Image(e.to_string()))?;
             }
+    
+            println!("Docker image loaded successfully.");
         }
-
+    
         Ok(())
     }
-
+    
     pub async fn cleanup_existing_container(&self) -> Result<(), DockerError> {
         println!("Cleaning up existing containers...");
-        
-        // 使用 docker ps 命令查找所有相关容器（包括停止的）
-        let output = Command::new("docker")
-            .args(&["ps", "-aq", "--filter", "name=consoley"])
-            .output()
-            .map_err(|e| DockerError::IO(e.to_string()))?;
-
-        // 存储转换后的字符串
-        let output_str = String::from_utf8_lossy(&output.stdout);
-        let container_ids: Vec<&str> = output_str
-            .trim()
-            .split('\n')
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        for container_id in container_ids {
-            println!("Removing container: {}", container_id);
-            
-            // 强制停止容器
-            let _ = Command::new("docker")
-                .args(&["kill", container_id])
-                .output();
-
-            // 强制删除容器
-            let rm_status = Command::new("docker")
-                .args(&["rm", "-f", container_id])
-                .status()
-                .map_err(|e| DockerError::IO(e.to_string()))?;
-
-            if !rm_status.success() {
-                return Err(DockerError::Container(format!("Failed to remove container {}", container_id)));
+    
+        // 列出所有相关容器（包括停止的）
+        let containers = self.docker
+            .list_containers(Some(ListContainersOptions::<String> {
+                all: true,
+                filters: {
+                    let mut filters = HashMap::new();
+                    filters.insert("name".to_string(), vec!["consoley".to_string()]);
+                    filters
+                },
+                ..Default::default()
+            }))
+            .await
+            .map_err(|e| DockerError::Container(e.to_string()))?;
+    
+        for container in containers {
+            if let Some(id) = container.id {
+                println!("Removing container: {}", id);
+    
+                // 停止容器
+                let _ = self.docker
+                    .stop_container(&id, None)
+                    .await;
+    
+                // 删除容器
+                self.docker
+                    .remove_container(
+                        &id,
+                        Some(RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
+                    )
+                    .await
+                    .map_err(|e| DockerError::Container(e.to_string()))?;
             }
         }
-
+    
         // 等待一段时间确保资源释放
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        
+    
         Ok(())
-    }
+    }    
 
     // 添加环境判断函数
     fn get_image_tag() -> String {

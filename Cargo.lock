@@ -422,6 +422,7 @@ name = "consoley-dev"
 version = "0.1.0"
 dependencies = [
  "bollard",
+ "bytes",
  "env_logger",
  "futures",
  "futures-util",
@@ -433,6 +434,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
