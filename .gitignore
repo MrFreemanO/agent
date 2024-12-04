@@ -131,3 +131,10 @@ dist
 
 # target
 target/
+
+# resources
+src-tauri/resources/
+src-tauri/src-tauri/
+
+# tauri build
+src-tauri/target/
