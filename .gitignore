@@ -138,3 +138,5 @@ src-tauri/src-tauri/
 
 # tauri build
 src-tauri/target/
+src-tauri/src-tauri/resources/docker/*.tar
+src-tauri/src-tauri/resources/docker/.docker_temp_*
