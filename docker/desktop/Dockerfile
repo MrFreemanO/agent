@@ -60,6 +60,10 @@ RUN add-apt-repository ppa:mozillateam/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     firefox-esr \
+    libreoffice \
+    xpaint \
+    galculator \
+    xpdf \
     x11-apps \
     gedit \
     pcmanfm \

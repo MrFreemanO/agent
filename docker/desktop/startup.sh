@@ -68,7 +68,6 @@ chown -R consoley:consoley /var/log/supervisor
 mkdir -p $HOME/Desktop $HOME/Documents $HOME/Downloads
 
 # 创建桌面快捷方式
-# ... (保持原有的桌面快捷方式创建代码)
 
 # 启动supervisord
 exec supervisord -n -c "$SUPERVISOR_CONF_FILE"

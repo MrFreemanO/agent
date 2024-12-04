@@ -61,6 +61,10 @@ RUN add-apt-repository ppa:mozillateam/ppa && \
     apt-get install -y --no-install-recommends \
     firefox-esr \
     x11-apps \
+    libreoffice \
+    xpaint \
+    galculator \
+    xpdf \
     gedit \
     pcmanfm \
     tint2 \

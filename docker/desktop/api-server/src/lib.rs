@@ -13,10 +13,13 @@ use std::sync::OnceLock;
 static BASH_SESSION: OnceLock<Mutex<Option<BashSession>>> = OnceLock::new();
 
 #[derive(Serialize)]
-pub struct ActionResponse {
-    pub r#type: String,
-    pub media_type: String,
-    pub data: String,
+#[serde(untagged)]
+pub enum ActionResponse {
+    Text(String),
+    Image {
+        r#type: String,
+        image_url: String,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,174 +118,125 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
                 },
                 ComputerAction::CursorPosition => {
                     match get_cursor_position() {
-                        Ok((x, y)) => HttpResponse::Ok().json(ActionResponse {
-                            r#type: String::from("success"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Cursor position is: X={}, Y={}", x, y),
-                        }),
-                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Failed to get cursor position: {}", e),
-                        })
+                        Ok((x, y)) => HttpResponse::Ok()
+                            .content_type("text/plain")
+                            .body(format!("Cursor position is: X={}, Y={}", x, y)),
+                        Err(e) => HttpResponse::InternalServerError()
+                            .content_type("text/plain")
+                            .body(format!("Failed to get cursor position: {}", e))
                     }
                 },
                 ComputerAction::Key => {
-                    // 处理按键操作
                     if let Some(text) = &req.text {
                         match execute_xdotool(&["key", text]) {
-                            Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                                r#type: String::from("success"),
-                                media_type: String::from("text/plain"),
-                                data: String::from("Key action executed successfully"),
-                            }),
-                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                r#type: String::from("error"),
-                                media_type: String::from("text/plain"),
-                                data: format!("Failed to execute key action: {}", e),
-                            })
+                            Ok(_) => HttpResponse::Ok()
+                                .content_type("text/plain")
+                                .body("Key action executed successfully"),
+                            Err(e) => HttpResponse::InternalServerError()
+                                .content_type("text/plain")
+                                .body(format!("Failed to execute key action: {}", e))
                         }
                     } else {
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Text parameter is required for key action"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("Text parameter is required for key action")
                     }
                 },
                 ComputerAction::Type => {
-                    // 处理输入文本操作
                     if let Some(text) = &req.text {
                         match execute_xdotool(&["type", text]) {
-                            Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                                r#type: String::from("success"),
-                                media_type: String::from("text/plain"),
-                                data: String::from("Type action executed successfully"),
-                            }),
-                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                r#type: String::from("error"),
-                                media_type: String::from("text/plain"),
-                                data: format!("Failed to execute type action: {}", e),
-                            })
+                            Ok(_) => HttpResponse::Ok()
+                                .content_type("text/plain")
+                                .body("Type action executed successfully"),
+                            Err(e) => HttpResponse::InternalServerError()
+                                .content_type("text/plain")
+                                .body(format!("Failed to execute type action: {}", e))
                         }
                     } else {
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Text parameter is required for type action"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("Text parameter is required for type action")
                     }
                 },
                 ComputerAction::MouseMove => {
-                    // 处理鼠标移动操作
                     if let Some(coords) = &req.coordinate {
                         if coords.len() == 2 {
                             match execute_xdotool(&["mousemove", &coords[0].to_string(), &coords[1].to_string()]) {
-                                Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                                    r#type: String::from("success"),
-                                    media_type: String::from("text/plain"),
-                                    data: String::from("Mouse move executed successfully"),
-                                }),
-                                Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                    r#type: String::from("error"),
-                                    media_type: String::from("text/plain"),
-                                    data: format!("Failed to execute mouse move: {}", e),
-                                })
+                                Ok(_) => HttpResponse::Ok()
+                                    .content_type("text/plain")
+                                    .body("Mouse move executed successfully"),
+                                Err(e) => HttpResponse::InternalServerError()
+                                    .content_type("text/plain")
+                                    .body(format!("Failed to execute mouse move: {}", e))
                             }
                         } else {
-                            HttpResponse::BadRequest().json(ActionResponse {
-                                r#type: String::from("error"),
-                                media_type: String::from("text/plain"),
-                                data: String::from("Coordinate must contain exactly 2 values"),
-                            })
+                            HttpResponse::BadRequest()
+                                .content_type("text/plain")
+                                .body("Coordinate must contain exactly 2 values")
                         }
                     } else {
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Coordinate parameter is required for mouse move"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("Coordinate parameter is required for mouse move")
                     }
                 },
                 ComputerAction::LeftClick => {
                     match execute_xdotool(&["click", "1"]) {
-                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                            r#type: String::from("success"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Left click executed successfully"),
-                        }),
-                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Failed to execute left click: {}", e),
-                        })
+                        Ok(_) => HttpResponse::Ok()
+                            .content_type("text/plain")
+                            .body("Left click executed successfully"),
+                        Err(e) => HttpResponse::InternalServerError()
+                            .content_type("text/plain")
+                            .body(format!("Failed to execute left click: {}", e))
                     }
                 },
                 ComputerAction::LeftClickDrag => {
                     match execute_xdotool(&["mousedown", "1"]) {
-                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                            r#type: String::from("success"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Left click drag executed successfully!"),
-                        }),
-                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Failed to execute left click drag: {}", e),
-                        })
+                        Ok(_) => HttpResponse::Ok()
+                            .content_type("text/plain")
+                            .body("Left click drag executed successfully!"),
+                        Err(e) => HttpResponse::InternalServerError()
+                            .content_type("text/plain")
+                            .body(format!("Failed to execute left click drag: {}", e))
                     }
                 },
                 ComputerAction::RightClick => {
                     match execute_xdotool(&["click", "3"]) {
-                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                            r#type: String::from("success"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Right click executed successfully"),
-                        }),
-                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Failed to execute right click: {}", e),
-                        })
+                        Ok(_) => HttpResponse::Ok()
+                            .content_type("text/plain")
+                            .body("Right click executed successfully"),
+                        Err(e) => HttpResponse::InternalServerError()
+                            .content_type("text/plain")
+                            .body(format!("Failed to execute right click: {}", e))
                     }
                 },
                 ComputerAction::MiddleClick => {
                     match execute_xdotool(&["click", "2"]) {
-                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                            r#type: String::from("success"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Middle click executed successfully"),
-                        }),
-                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Failed to execute middle click: {}", e),
-                        })
+                        Ok(_) => HttpResponse::Ok()
+                            .content_type("text/plain")
+                            .body("Middle click executed successfully"),
+                        Err(e) => HttpResponse::InternalServerError()
+                            .content_type("text/plain")
+                            .body(format!("Failed to execute middle click: {}", e))
                     }
                 },
                 ComputerAction::DoubleClick => {
                     match execute_xdotool(&["click", "--repeat", "2", "1"]) {
-                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                            r#type: String::from("success"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("Double click executed successfully"),
-                        }),
-                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: format!("Failed to execute double click: {}", e),
-                        })
+                        Ok(_) => HttpResponse::Ok()
+                            .content_type("text/plain")
+                            .body("Double click executed successfully"),
+                        Err(e) => HttpResponse::InternalServerError()
+                            .content_type("text/plain")
+                            .body(format!("Failed to execute double click: {}", e))
                     }
                 },
             }
         },
         None => {
             log::error!("Invalid action: {}", req.action);
-            HttpResponse::BadRequest().json(ActionResponse {
-                r#type: String::from("error"),
-                media_type: String::from("text/plain"),
-                data: String::from("Invalid action"),
-            })
+            HttpResponse::BadRequest()
+                .content_type("text/plain")
+                .body("Invalid action")
         }
     };
     
@@ -305,20 +259,16 @@ fn take_screenshot() -> HttpResponse {
             if !output.status.success() {
                 let error = String::from_utf8_lossy(&output.stderr);
                 log::error!("Screenshot command failed: {}", error);
-                return HttpResponse::InternalServerError().json(ActionResponse {
-                    r#type: String::from("error"),
-                    media_type: String::from("text/plain"),
-                    data: format!("Failed to take screenshot: {}", error),
-                });
+                return HttpResponse::InternalServerError()
+                    .content_type("text/plain")
+                    .body(format!("Failed to take screenshot: {}", error));
             }
 
             // 读取截图文件
             match fs::read(screenshot_path) {
                 Ok(image_data) => {
-                    // 转换为 base64
                     let base64_string = general_purpose::STANDARD.encode(&image_data);
                     
-                    // 清理临时文件
                     if let Err(e) = fs::remove_file(screenshot_path) {
                         log::warn!("Failed to remove temporary screenshot file: {}", e);
                     }
@@ -326,29 +276,24 @@ fn take_screenshot() -> HttpResponse {
                     log::info!("Screenshot taken successfully");
                     HttpResponse::Ok()
                         .content_type("application/json")
-                        .json(ActionResponse {
-                            r#type: String::from("base64"),
-                            media_type: String::from("image/png"),
-                            data: base64_string,
+                        .json(ActionResponse::Image {
+                            r#type: String::from("image"),
+                            image_url: base64_string,
                         })
-                }
+                },
                 Err(e) => {
                     log::error!("Failed to read screenshot file: {}", e);
-                    HttpResponse::InternalServerError().json(ActionResponse {
-                        r#type: String::from("error"),
-                        media_type: String::from("text/plain"),
-                        data: format!("Failed to read screenshot file: {}", e),
-                    })
+                    HttpResponse::InternalServerError()
+                        .content_type("text/plain")
+                        .body(format!("Failed to read screenshot file: {}", e))
                 }
             }
         }
         Err(e) => {
             log::error!("Failed to execute screenshot command: {}", e);
-            HttpResponse::InternalServerError().json(ActionResponse {
-                r#type: String::from("error"),
-                media_type: String::from("text/plain"),
-                data: format!("Failed to execute screenshot command: {}", e),
-            })
+            HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("Failed to execute screenshot command: {}", e))
         }
     }
 }
@@ -433,11 +378,9 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                             if let Some(range) = &req.view_range {
                                 // First check array length
                                 if range.len() != 2 {
-                                    return HttpResponse::BadRequest().json(ActionResponse {
-                                        r#type: String::from("error"),
-                                        media_type: String::from("text/plain"),
-                                        data: String::from("view_range should contain exactly 2 integers"),
-                                    });
+                                    return HttpResponse::BadRequest()
+                                        .content_type("text/plain")
+                                        .body("view_range should contain exactly 2 integers");
                                 }
 
                                 let lines: Vec<&str> = file_content.split('\n').collect();
@@ -447,31 +390,25 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
 
                                 // Validate init_line
                                 if init_line < 1 || init_line as usize > n_lines_file {
-                                    return HttpResponse::BadRequest().json(ActionResponse {
-                                        r#type: String::from("error"),
-                                        media_type: String::from("text/plain"),
-                                        data: format!("Invalid view_range: first element {} should be within range [1, {}]", 
-                                            init_line, n_lines_file),
-                                    });
+                                    return HttpResponse::BadRequest()
+                                        .content_type("text/plain")
+                                        .body(format!("Invalid view_range: first element {} should be within range [1, {}]", 
+                                            init_line, n_lines_file));
                                 }
 
                                 // Validate final_line
                                 if final_line != -1 {
                                     if final_line as usize > n_lines_file {
-                                        return HttpResponse::BadRequest().json(ActionResponse {
-                                            r#type: String::from("error"),
-                                            media_type: String::from("text/plain"),
-                                            data: format!("Invalid view_range: second element {} should be smaller than number of lines {}", 
-                                                final_line, n_lines_file),
-                                        });
+                                        return HttpResponse::BadRequest()
+                                            .content_type("text/plain")
+                                            .body(format!("Invalid view_range: second element {} should be smaller than number of lines {}", 
+                                                final_line, n_lines_file));
                                     }
                                     if final_line < init_line {
-                                        return HttpResponse::BadRequest().json(ActionResponse {
-                                            r#type: String::from("error"),
-                                            media_type: String::from("text/plain"),
-                                            data: format!("Invalid view_range: second element {} should be larger or equal to first element {}", 
-                                                final_line, init_line),
-                                        });
+                                        return HttpResponse::BadRequest()
+                                            .content_type("text/plain")
+                                            .body(format!("Invalid view_range: second element {} should be larger or equal to first element {}", 
+                                                final_line, init_line));
                                     }
                                 }
 
@@ -485,25 +422,19 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 file_content = selected_lines.join("\n");
                             }
 
-                            HttpResponse::Ok().json(ActionResponse {
-                                r#type: String::from("success"),
-                                media_type: String::from("text/plain"),
-                                data: file_content,
-                            })
+                            HttpResponse::Ok()
+                                .content_type("text/plain")
+                                .body(file_content)
                         },
                         Err(e) => {
                             if e.kind() == std::io::ErrorKind::NotFound {
-                                HttpResponse::BadRequest().json(ActionResponse {
-                                    r#type: String::from("error"),
-                                    media_type: String::from("text/plain"),
-                                    data: format!("File not found: {}", req.path),
-                                })
+                                HttpResponse::BadRequest()
+                                    .content_type("text/plain")
+                                    .body(format!("File not found: {}", req.path))
                             } else {
-                                HttpResponse::InternalServerError().json(ActionResponse {
-                                    r#type: String::from("error"),
-                                    media_type: String::from("text/plain"),
-                                    data: format!("Failed to read file: {}", e),
-                                })
+                                HttpResponse::InternalServerError()
+                                    .content_type("text/plain")
+                                    .body(format!("Failed to read file: {}", e))
                             }
                         }
                     }
@@ -515,28 +446,22 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         match fs::write(&req.path, text) {
                             Ok(_) => {
                                 println!("File created successfully");
-                                HttpResponse::Ok().json(ActionResponse {
-                                    r#type: String::from("success"),
-                                    media_type: String::from("text/plain"),
-                                    data: format!("File created successfully at: {}", req.path),
-                                })
+                                HttpResponse::Ok()
+                                    .content_type("text/plain")
+                                    .body(format!("File created successfully at: {}", req.path))
                             },
                             Err(e) => {
                                 println!("Failed to create file: {}", e);
-                                HttpResponse::InternalServerError().json(ActionResponse {
-                                    r#type: String::from("error"),
-                                    media_type: String::from("text/plain"),
-                                    data: format!("Failed to create file: {}", e),
-                                })
+                                HttpResponse::InternalServerError()
+                                    .content_type("text/plain")
+                                    .body(format!("Failed to create file: {}", e))
                             }
                         }
                     } else {
                         println!("Missing file_text parameter");
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("file_text is required for create action"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("file_text is required for create action")
                     }
                 },
                 EditCommand::StrReplace => {
@@ -549,38 +474,28 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
-                                    return HttpResponse::InternalServerError().json(ActionResponse {
-                                        r#type: String::from("error"),
-                                        media_type: String::from("text/plain"),
-                                        data: format!("Failed to create backup: {}", e),
-                                    });
+                                    return HttpResponse::InternalServerError()
+                                        .content_type("text/plain")
+                                        .body(format!("Failed to create backup: {}", e));
                                 }
                                 
                                 match fs::write(&req.path, new_content) {
-                                    Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                                        r#type: String::from("success"),
-                                        media_type: String::from("text/plain"),
-                                        data: String::from("String replacement completed successfully"),
-                                    }),
-                                    Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                        r#type: String::from("error"),
-                                        media_type: String::from("text/plain"),
-                                        data: format!("Failed to write file: {}", e),
-                                    })
+                                    Ok(_) => HttpResponse::Ok()
+                                        .content_type("text/plain")
+                                        .body("String replacement completed successfully"),
+                                    Err(e) => HttpResponse::InternalServerError()
+                                        .content_type("text/plain")
+                                        .body(format!("Failed to write file: {}", e))
                                 }
                             },
-                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                r#type: String::from("error"),
-                                media_type: String::from("text/plain"),
-                                data: format!("Failed to read file: {}", e),
-                            })
+                            Err(e) => HttpResponse::InternalServerError()
+                                .content_type("text/plain")
+                                .body(format!("Failed to read file: {}", e))
                         }
                     } else {
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("old_str and new_str are required for str_replace action"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("old_str and new_str are required for str_replace action")
                     }
                 },
                 EditCommand::Insert => {
@@ -595,48 +510,36 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
-                                    return HttpResponse::InternalServerError().json(ActionResponse {
-                                        r#type: String::from("error"),
-                                        media_type: String::from("text/plain"),
-                                        data: format!("Failed to create backup: {}", e),
-                                    });
+                                    return HttpResponse::InternalServerError()
+                                        .content_type("text/plain")
+                                        .body(format!("Failed to create backup: {}", e));
                                 }
 
                                 if line_idx <= lines.len() {
                                     lines.insert(line_idx, text);
                                     let new_content = lines.join("\n");
                                     match fs::write(&req.path, new_content) {
-                                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                                            r#type: String::from("success"),
-                                            media_type: String::from("text/plain"),
-                                            data: String::from("Text inserted successfully"),
-                                        }),
-                                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                            r#type: String::from("error"),
-                                            media_type: String::from("text/plain"),
-                                            data: format!("Failed to write file: {}", e),
-                                        })
+                                        Ok(_) => HttpResponse::Ok()
+                                            .content_type("text/plain")
+                                            .body("Text inserted successfully"),
+                                        Err(e) => HttpResponse::InternalServerError()
+                                            .content_type("text/plain")
+                                            .body(format!("Failed to write file: {}", e))
                                     }
                                 } else {
-                                    HttpResponse::BadRequest().json(ActionResponse {
-                                        r#type: String::from("error"),
-                                        media_type: String::from("text/plain"),
-                                        data: format!("Line number {} is out of range", line_num),
-                                    })
+                                    HttpResponse::BadRequest()
+                                        .content_type("text/plain")
+                                        .body(format!("Line number {} is out of range", line_num))
                                 }
                             },
-                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                r#type: String::from("error"),
-                                media_type: String::from("text/plain"),
-                                data: format!("Failed to read file: {}", e),
-                            })
+                            Err(e) => HttpResponse::InternalServerError()
+                                .content_type("text/plain")
+                                .body(format!("Failed to read file: {}", e))
                         }
                     } else {
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("file_text and insert_line are required for insert action"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("file_text and insert_line are required for insert action")
                     }
                 },
                 EditCommand::UndoEdit => {
@@ -644,34 +547,26 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                     let backup_path = format!("{}.bak", req.path);
                     if fs::metadata(&backup_path).is_ok() {
                         match fs::rename(&backup_path, &req.path) {
-                            Ok(_) => HttpResponse::Ok().json(ActionResponse {
-                                r#type: String::from("success"),
-                                media_type: String::from("text/plain"),
-                                data: String::from("Edit undone successfully"),
-                            }),
-                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                                r#type: String::from("error"),
-                                media_type: String::from("text/plain"),
-                                data: format!("Failed to restore backup: {}", e),
-                            })
+                            Ok(_) => HttpResponse::Ok()
+                                .content_type("text/plain")
+                                .body("Edit undone successfully"),
+                            Err(e) => HttpResponse::InternalServerError()
+                                .content_type("text/plain")
+                                .body(format!("Failed to restore backup: {}", e))
                         }
                     } else {
-                        HttpResponse::BadRequest().json(ActionResponse {
-                            r#type: String::from("error"),
-                            media_type: String::from("text/plain"),
-                            data: String::from("No backup file found to undo"),
-                        })
+                        HttpResponse::BadRequest()
+                            .content_type("text/plain")
+                            .body("No backup file found to undo")
                     }
                 }
             }
         },
         None => {
             println!("Invalid command received: {}", req.command);
-            HttpResponse::BadRequest().json(ActionResponse {
-                r#type: String::from("error"),
-                media_type: String::from("text/plain"),
-                data: String::from("Unsupported edit command"),
-            })
+            HttpResponse::BadRequest()
+                .content_type("text/plain")
+                .body("Unsupported edit command")
         }
     };
     
@@ -683,11 +578,8 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
 async fn health_check() -> impl Responder {
     log::info!("Health check called");
     HttpResponse::Ok()
-        .json(ActionResponse {
-            r#type: String::from("success"),
-            media_type: String::from("text/plain"),
-            data: String::from("Service is running...")
-        })
+        .content_type("text/plain")
+        .body("Service is running")
 }
 
 #[post("/computer")]
@@ -866,17 +758,13 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
         match BashSession::new().await {
             Ok(new_session) => {
                 *session_guard = Some(new_session);
-                return HttpResponse::Ok().json(ActionResponse {
-                    r#type: String::from("success"),
-                    media_type: String::from("text/plain"),
-                    data: String::from("Bash session has been restarted"),
-                });
+                return HttpResponse::Ok()
+                    .content_type("text/plain")
+                    .body("Bash session has been restarted")
             },
-            Err(e) => return HttpResponse::InternalServerError().json(ActionResponse {
-                r#type: String::from("error"),
-                media_type: String::from("text/plain"),
-                data: format!("Failed to restart bash session: {}", e),
-            })
+            Err(e) => return HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("Failed to restart bash session: {}", e))
         }
     }
 
@@ -888,11 +776,9 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
                 Ok(new_session) => {
                     *session_guard = Some(new_session);
                 },
-                Err(e) => return HttpResponse::InternalServerError().json(ActionResponse {
-                    r#type: String::from("error"),
-                    media_type: String::from("text/plain"),
-                    data: format!("Failed to create bash session: {}", e),
-                })
+                Err(e) => return HttpResponse::InternalServerError()
+                    .content_type("text/plain")
+                    .body(format!("Failed to create bash session: {}", e))
             }
         }
 
@@ -906,31 +792,23 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
                         format!("stdout:\n{}\nstderr:\n{}", stdout, stderr)
                     };
                     
-                    HttpResponse::Ok().json(ActionResponse {
-                        r#type: String::from("success"),
-                        media_type: String::from("text/plain"),
-                        data: response,
-                    })
+                    HttpResponse::Ok()
+                        .content_type("text/plain")
+                        .body(response)
                 }
-                Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
-                    r#type: String::from("error"),
-                    media_type: String::from("text/plain"),
-                    data: format!("Command execution failed: {}", e),
-                })
+                Err(e) => HttpResponse::InternalServerError()
+                    .content_type("text/plain")
+                    .body(format!("Command execution failed: {}", e))
             }
         } else {
-            HttpResponse::InternalServerError().json(ActionResponse {
-                r#type: String::from("error"),
-                media_type: String::from("text/plain"),
-                data: String::from("No active bash session"),
-            })
+            HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body("No active bash session")
         }
     } else {
-        HttpResponse::BadRequest().json(ActionResponse {
-            r#type: String::from("error"),
-            media_type: String::from("text/plain"),
-            data: String::from("Invalid request: command is required when not restarting"),
-        })
+        HttpResponse::BadRequest()
+            .content_type("text/plain")
+            .body("Invalid request: command is required when not restarting")
     }
 }
 

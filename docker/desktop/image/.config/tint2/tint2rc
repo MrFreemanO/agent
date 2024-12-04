@@ -1,6 +1,6 @@
 #-------------------------------------
 # Panel
-panel_items = TL
+panel_items = TLS
 panel_size = 100% 60
 panel_margin = 0 0
 panel_padding = 2 0 2
@@ -58,8 +58,16 @@ startup_notifications = 1
 launcher_tooltip = 1
 
 #-------------------------------------
-# Launcher icon
+# Launcher icons - 同时支持 Ubuntu 和 Alpine 的路径
 launcher_item_app = /usr/share/applications/firefox-esr.desktop
+; launcher_item_app = /usr/share/applications/firefox.desktop
+launcher_item_app = /usr/share/applications/libreoffice-calc.desktop
+; launcher_item_app = /home/computeruse/.config/tint2/applications/terminal.desktop
+; launcher_item_app = /home/computeruse/.config/tint2/applications/firefox-custom.desktop
+launcher_item_app = /usr/share/applications/xpaint.desktop
+launcher_item_app = /usr/share/applications/xpdf.desktop
+; launcher_item_app = /home/computeruse/.config/tint2/applications/gedit.desktop
+launcher_item_app = /usr/share/applications/galculator.desktop
 
 #-------------------------------------
 # Background definitions
