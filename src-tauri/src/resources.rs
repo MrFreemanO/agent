@@ -13,10 +13,19 @@ pub async fn extract_docker_image(app: &tauri::AppHandle) -> Result<PathBuf, Box
     // 如果镜像文件已存在，验证其完整性
     if image_path.exists() {
         if let Ok(metadata) = fs::metadata(&image_path).await {
-            if metadata.len() > 1000000 { // 确保文件大小合理
-                return Ok(image_path);
+            // 检查文件大小是否合理（比如至少100MB）
+            if metadata.len() > 100_000_000 {
+                // 验证文件头部是否为有效的tar文件
+                let mut file = fs::File::open(&image_path).await?;
+                let mut buffer = [0u8; 512];  // tar文件头部大小
+                if file.read_exact(&mut buffer).await.is_ok() {
+                    if buffer.starts_with(&[0x1f, 0x8b]) || // gzip
+                       buffer.starts_with(b"ustar") {       // tar
+                        return Ok(image_path);
+                    }
+                }
             }
-            // 如果文件太小，删除它
+            // 如果验证失败，删除文件
             fs::remove_file(&image_path).await?;
         }
     }

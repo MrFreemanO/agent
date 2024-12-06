@@ -14,16 +14,19 @@ function App() {
 
   // 检查端口是否可访问
   const checkPort = async (port: number): Promise<boolean> => {
+    console.log(`Attempting to check port ${port}...`);
     try {
-      const response = await fetch(`http://localhost:${port}/vnc.html`, {
-        method: 'HEAD',
-        mode: 'no-cors'
-      });
-      console.log(`Port ${port} check response:`, response.type);
-      return true;
+        const url = `http://localhost:${port}/vnc.html`;
+        console.log(`Fetching ${url}...`);
+        const response = await fetch(url, {
+            method: 'HEAD',
+            mode: 'no-cors'
+        });
+        console.log(`Port ${port} check response:`, response);
+        return true;
     } catch (error) {
-      console.log(`Port ${port} not accessible:`, error);
-      return false;
+        console.error(`Port ${port} check failed:`, error);
+        return false;
     }
   };
 

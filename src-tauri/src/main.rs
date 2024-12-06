@@ -9,6 +9,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri;
 use tauri::{Manager, RunEvent, WindowEvent, Emitter};
+use std::io::Write;
+use chrono;
 
 // 确保 DockerState 是 Send + Sync
 #[derive(Debug)]
@@ -28,21 +30,53 @@ impl Default for DockerState {
     }
 }
 
+// 添加日志宏定义
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        println!("{}", msg);
+        crate::log_to_file(&msg);
+    }};
+}
+
+// 修改日志函数
+fn log_to_file(msg: &str) {
+    let log_path = std::env::temp_dir().join("consoley").join("app.log");
+    
+    // 尝试创建日志目录，忽略可能的错误
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    
+    // 追加日志内容
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path) 
+    {
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let _ = writeln!(file, "[{}] {}", timestamp, msg);
+    }
+}
+
 #[tauri::command]
 async fn start_container(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<Mutex<DockerState>>>,
 ) -> Result<String, String> {
+    log!("Starting container process...");
     let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
     
     // 检查是否已有运行的容器
+    log!("Checking for existing containers...");
     match docker_manager.list_containers().await {
         Ok(containers) => {
             for container in containers {
                 if let Some(names) = container.names {
                     if names.iter().any(|name| name.contains("consoley")) {
                         if let Some(id) = container.id {
-                            println!("Found existing container: {}", id);   
+                            log!("Found existing container: {}", id);   
                             let mut state_guard = state.lock().await;
                             state_guard.container_id = id.clone();
                             state_guard.status = "running".to_string();
@@ -56,27 +90,30 @@ async fn start_container(
     }
 
     // 确保镜像存在
-    println!("Checking/building Docker image...");
+    log!("Checking/building Docker image...");
     let image_tag = if cfg!(debug_assertions) {
-        println!("Debug mode detected, using dev image");
+        log!("Debug mode detected, using dev image");
         "consoleai/desktop:dev"
     } else {
-        println!("Release mode detected, using latest image");
+        log!("Release mode detected, using latest image");
         "consoleai/desktop:latest"
     };
     
     if let Err(e) = docker_manager.ensure_image(&app, image_tag).await {
-        return Err(e.to_string());
+        let err_msg = format!("Failed to ensure image: {}", e);
+        log!("{}", err_msg);
+        return Err(err_msg);
     }
     
     // 创建并启动容器
-    println!("Creating and starting container...");
+    log!("Creating and starting container...");
     let container_id = match docker_manager.create_and_start_container().await {
-        Ok(id) => id,
-        Err(e) => return Err(e.to_string()),
+        Ok(id) => {
+            log!("Container created with ID: {}", id);
+            id
+        },
+        Err(e) => return Err(format!("Failed to create container: {}", e)),
     };
-    
-    println!("Container started successfully with ID: {}", container_id);
     
     // 更新状态
     {
@@ -86,12 +123,14 @@ async fn start_container(
     }
     
     // 添加API服务检查
+    log!("Checking API service...");
     let check_api = async {
         let client = reqwest::Client::new();
-        for _ in 0..30 {  // 尝试30次，每次等待1秒
+        for i in 0..30 {
+            log!("API check attempt {}/30", i + 1);
             match client.get("http://localhost:8090/health").send().await {
                 Ok(response) if response.status().is_success() => {
-                    println!("API server is ready");
+                    log!("API server is ready");
                     return Ok(());
                 }
                 _ => {
@@ -102,12 +141,11 @@ async fn start_container(
         Err("API server failed to start".to_string())
     };
 
-    // 等待API服务就绪
     if let Err(e) = check_api.await {
-        return Err(e);
+        return Err(format!("API service check failed: {}", e));
     }
     
-    // 发送服务就绪事件
+    log!("Container startup completed successfully");
     app.emit("vnc-ready", ()).map_err(|e| e.to_string())?;
     
     Ok(container_id)
@@ -177,11 +215,14 @@ async fn get_app_info(
 }
 
 fn main() {
+    log!("Application starting...");
+    log!("Log file location: {:?}", std::env::temp_dir().join("consoley").join("app.log"));
+    
     let mut app = tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle();
             
-            // 启动容器管理
+            // 启动���器管理，但不执行清理
             let app_handle_clone = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = setup_docker(&app_handle_clone).await {
@@ -202,49 +243,57 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // 添加事件处理
+    // 仅在窗口关闭时执行清理
     app.run(|app_handle, event| {
-        if let RunEvent::WindowEvent { label: _, event: WindowEvent::CloseRequested { .. }, .. } = event {
-            // 执行清理
-            tauri::async_runtime::block_on(async {
-                if let Err(e) = cleanup_docker().await {
-                    eprintln!("Failed to cleanup Docker: {}", e);
-                }
-            });
+        match event {
+            RunEvent::WindowEvent { 
+                label: _, 
+                event: WindowEvent::CloseRequested { .. }, 
+                .. 
+            } => {
+                log!("Window closing, cleaning up Docker resources...");
+                tauri::async_runtime::block_on(async {
+                    if let Err(e) = cleanup_docker().await {
+                        eprintln!("Failed to cleanup Docker: {}", e);
+                    }
+                });
+            }
+            _ => {}
         }
     });
 }
 
 async fn setup_docker(app: &tauri::AppHandle) -> Result<(), String> {
-    println!("Initializing Docker setup...");
+    log!("Initializing Docker setup...");
+    log!("Current working directory: {:?}", std::env::current_dir());
     
     let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| {
         let err_msg = format!("Failed to create Docker manager: {}", e);
-        println!("{}", err_msg);
+        log!("{}", err_msg);
         err_msg
     })?);
     
     // 确保镜像存在
     let image_tag = if cfg!(debug_assertions) {
-        println!("Debug mode detected, using dev image");
+        log!("Debug mode detected, using dev image");
         "consoleai/desktop:dev"
     } else {
-        println!("Release mode detected, using latest image");
+        log!("Release mode detected, using latest image");
         "consoleai/desktop:latest"
     };
     
-    println!("Ensuring Docker image exists: {}", image_tag);
+    log!("Ensuring Docker image exists: {}", image_tag);
     if let Err(e) = docker_manager.ensure_image(app, image_tag).await {
         let err_msg = format!("Failed to ensure Docker image: {:?}", e);
-        println!("{}", err_msg);
+        log!("{}", err_msg);
         return Err(err_msg);
     }
     
     // 创建并启动容器
-    println!("Creating and starting container...");
+    log!("Creating and starting container...");
     match docker_manager.create_and_start_container().await {
         Ok(container_id) => {
-            println!("Container started successfully with ID: {}", container_id);
+            log!("Container started successfully with ID: {}", container_id);
             
             // 发送服务就绪事件
             app.emit("vnc-ready", ()).map_err(|e| e.to_string())?;
@@ -253,7 +302,7 @@ async fn setup_docker(app: &tauri::AppHandle) -> Result<(), String> {
         }
         Err(e) => {
             let err_msg = format!("Failed to start container: {:?}", e);
-            println!("{}", err_msg);
+            log!("{}", err_msg);
             Err(err_msg)
         }
     }

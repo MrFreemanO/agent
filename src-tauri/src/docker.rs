@@ -1,12 +1,16 @@
 use bollard::Docker;
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions, ListContainersOptions};
-use bollard::image::{ListImagesOptions, CreateImageOptions};
+use bollard::image::{ListImagesOptions, CreateImageOptions, ImportImageOptions};
 use bollard::models::{HostConfig, PortBinding, ContainerSummary};
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::resources::extract_docker_image;
 use bytes::Bytes;
+use crate::log;
+use futures::stream::{self, BoxStream};
+use futures::{Stream, StreamExt, TryStreamExt};
+use std::pin::Pin;
+use bollard::auth::DockerCredentials;
 
 #[derive(Debug)]
 pub enum DockerError {
@@ -44,14 +48,25 @@ impl From<std::io::Error> for DockerError {
 
 pub struct DockerManager {
     docker: Arc<Docker>,
+    image_loaded: std::sync::atomic::AtomicBool,
+    image_tag: String,
 }
 
 impl DockerManager {
     pub async fn new() -> Result<Self, DockerError> {
         let docker = Docker::connect_with_local_defaults()
             .map_err(|e| DockerError::Connection(e.to_string()))?;
+        
+        let image_tag = if cfg!(debug_assertions) {
+            String::from("consoleai/desktop:dev")
+        } else {
+            String::from("consoleai/desktop:latest")
+        };
+
         Ok(DockerManager { 
-            docker: Arc::new(docker) 
+            docker: Arc::new(docker),
+            image_loaded: std::sync::atomic::AtomicBool::new(false),
+            image_tag,
         })
     }
 
@@ -62,12 +77,13 @@ impl DockerManager {
     }
     
     pub async fn ensure_image(&self, app: &tauri::AppHandle, image_tag: &str) -> Result<(), DockerError> {
-        println!("Ensuring Docker image: {}", image_tag);
-    
-        // 首先检查并清理已存在的容器
-        self.cleanup_existing_container().await?;
-    
-        // 使用 Bollard API 检查镜像是否存在
+        if self.image_loaded.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        log!("Ensuring Docker image: {}", image_tag);
+
+        // 检查镜像是否存在
         let images = self.docker
             .list_images(Some(ListImagesOptions::<String> {
                 all: true,
@@ -80,47 +96,46 @@ impl DockerManager {
             }))
             .await
             .map_err(|e| DockerError::Image(e.to_string()))?;
-    
+
         if images.is_empty() {
-            println!("Docker image {} not found, attempting to load from resources...", image_tag);
-    
+            log!("Docker image {} not found, attempting to load from resources...", image_tag);
+
             let image_path = extract_docker_image(app)
                 .await
                 .map_err(|e| DockerError::IO(e.to_string()))?;
             
-            println!("Loading Docker image from: {:?}", image_path);
-    
-            let mut file = tokio::fs::File::open(&image_path)
-                .await
-                .map_err(|e| DockerError::IO(e.to_string()))?;
+            log!("Loading Docker image from: {:?}", image_path);
+
+            // 读取镜像文件
+            let image_data = tokio::fs::read(&image_path).await
+                .map_err(|e| DockerError::IO(format!("Failed to read image file: {}", e)))?;
             
-            let mut image_data = Vec::new();
-            tokio::io::copy(&mut file, &mut image_data)
-                .await
-                .map_err(|e| DockerError::IO(e.to_string()))?;
-    
-            let mut stream = self.docker
-                .create_image(
-                    Some(CreateImageOptions {
-                        from_src: "-",
-                        ..Default::default()
-                    }),
-                    Some(Bytes::from(image_data)),
-                    None,
-                );
-    
-            while let Some(result) = stream.next().await {
-                result.map_err(|e| DockerError::Image(e.to_string()))?;
-            }
-    
-            println!("Docker image loaded successfully.");
+            log!("Loading Docker image using bollard");
+
+            // 将镜像数据直接转换为 Bytes
+            let image_bytes = Bytes::from(image_data);
+
+            // 使用 import_image 导入镜像
+            self.docker.import_image(
+                bollard::image::ImportImageOptions {
+                    ..Default::default()
+                },
+                image_bytes, // 直接传递 Bytes
+                None,
+            )
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|e| DockerError::Image(e.to_string()))?;
+
+            log!("Docker image loaded successfully using bollard");
         }
-    
+
+        self.image_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
-    
+
     pub async fn cleanup_existing_container(&self) -> Result<(), DockerError> {
-        println!("Cleaning up existing containers...");
+        log!("Cleaning up existing containers...");
     
         // 列出所有相关容器（包括停止的）
         let containers = self.docker
@@ -138,7 +153,7 @@ impl DockerManager {
     
         for container in containers {
             if let Some(id) = container.id {
-                println!("Removing container: {}", id);
+                log!("Removing container: {}", id);
     
                 // 停止容器
                 let _ = self.docker
@@ -165,23 +180,37 @@ impl DockerManager {
         Ok(())
     }    
 
-    // 添加环境判断函数
-    fn get_image_tag() -> String {
-        if cfg!(debug_assertions) {
-            String::from("consoleai/desktop:dev")
-        } else {
-            String::from("consoleai/desktop:latest")
-        }
-    }
-
     pub async fn create_and_start_container(&self) -> Result<String, DockerError> {
-        // 先清理已存在的容器
-        self.cleanup_existing_container().await?;
-        
-        // 等待一下确保端口释放
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        
-        // 创建容器配置
+        // 首先检查是否存在为 "consoley" 的容器
+        let containers = self.docker
+            .list_containers(Some(ListContainersOptions::<String> {
+                all: true, // 包括停止的容器
+                filters: {
+                    let mut filters = HashMap::new();
+                    filters.insert("name".to_string(), vec!["consoley".to_string()]);
+                    filters
+                },
+                ..Default::default()
+            }))
+            .await
+            .map_err(|e| DockerError::Container(e.to_string()))?;
+
+        // 果找到已存在的器
+        if let Some(container) = containers.first() {
+            if let Some(id) = &container.id {
+                // 查容器状态，如没在运行就启动它
+                if container.state.as_deref() != Some("running") {
+                    self.docker
+                        .start_container(id, None::<StartContainerOptions<String>>)
+                        .await?;
+                }
+                // 等待服务就绪
+                self.wait_for_services(id).await?;
+                return Ok(id.clone());
+            }
+        }
+
+        // 如果没有找到容器，创建新的
         let mut port_bindings = HashMap::new();
         
         // VNC端口映射
@@ -214,7 +243,7 @@ impl DockerManager {
         };
 
         let config = Config {
-            image: Some(Self::get_image_tag()),
+            image: Some(self.image_tag.clone()),
             host_config: Some(host_config),
             env: Some(vec![
                 String::from("DISPLAY=:1"),
@@ -246,14 +275,14 @@ impl DockerManager {
         Ok(container.id)
     }
 
-    // 添加等待服务就绪的方法
+    // 加待服务就绪的方法
     async fn wait_for_services(&self, container_id: &str) -> Result<(), DockerError> {
-        println!("Waiting for services to be ready...");
+        log!("Waiting for services to be ready...");
         
-        // 等待容器完全启动
+        // 等待完全启动
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         
-        // 检查容器状态
+        // 检容器状态
         let container_info = self.docker
             .inspect_container(container_id, None)
             .await
@@ -270,7 +299,7 @@ impl DockerManager {
         while retries < MAX_RETRIES {
             if let Ok(logs) = self.get_container_logs(container_id).await {
                 if logs.contains("success: x11vnc entered RUNNING state") {
-                    println!("All services are ready!");
+                    log!("All services are ready!");
                     return Ok(());
                 }
             }
@@ -330,7 +359,9 @@ impl DockerManager {
 
     // 添加一个公共的清理方法
     pub async fn cleanup(&self) -> Result<(), DockerError> {
-        self.cleanup_existing_container().await
+        // println!("Cleaning up existing containers...");
+        // 清理逻辑...
+        Ok(())
     }
 
 }
