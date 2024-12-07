@@ -108,7 +108,7 @@ function App() {
 
   // 组件挂载时自动启动容器
   useEffect(() => {
-    startContainer();
+    // startContainer();
   }, []);
 
   return (

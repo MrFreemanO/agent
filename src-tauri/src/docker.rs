@@ -11,6 +11,7 @@ use futures::stream::{self, BoxStream};
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::pin::Pin;
 use bollard::auth::DockerCredentials;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum DockerError {
@@ -180,8 +181,49 @@ impl DockerManager {
         Ok(())
     }    
 
-    pub async fn create_and_start_container(&self) -> Result<String, DockerError> {
-        // 首先检查是否存在为 "consoley" 的容器
+    fn get_api_server_path(&self) -> Result<PathBuf, DockerError> {
+        let current_dir = std::env::current_dir()
+            .map_err(|e| DockerError::IO(format!("Failed to get current directory: {}", e)))?;
+            
+        let project_root = current_dir
+            .parent() // 回到项目根目录
+            .ok_or_else(|| DockerError::IO("Failed to get project root directory".to_string()))?;
+            
+        let api_server_path = project_root
+            .join("docker")
+            .join("desktop")
+            .join("api-server");
+            
+        log!("Looking for api-server at: {}", api_server_path.display());
+            
+        if !api_server_path.exists() {
+            return Err(DockerError::IO(format!(
+                "api-server directory not found at: {}",
+                api_server_path.display()
+            )));
+        }
+
+        if !api_server_path.join("Cargo.toml").exists() {
+            return Err(DockerError::IO(format!(
+                "Cargo.toml not found in api-server directory: {}",
+                api_server_path.display()
+            )));
+        }
+        
+        Ok(api_server_path)
+    }
+
+    async fn verify_api_server_path(&self) -> Result<(), DockerError> {
+        let api_server_path = self.get_api_server_path()?;
+        log!("Verified api-server path at: {}", api_server_path.display());
+        Ok(())
+    }
+
+    pub async fn create_and_start_container(&self) -> Result<String, Box<dyn std::error::Error>> {
+        // 验证 api-server 路径
+        self.verify_api_server_path().await?;
+        
+        log!("Checking for existing containers...");
         let containers = self.docker
             .list_containers(Some(ListContainersOptions::<String> {
                 all: true, // 包括停止的容器
@@ -195,22 +237,32 @@ impl DockerManager {
             .await
             .map_err(|e| DockerError::Container(e.to_string()))?;
 
-        // 果找到已存在的器
+        // 如果找到已存在的容器，尝试复用
         if let Some(container) = containers.first() {
             if let Some(id) = &container.id {
-                // 查容器状态，如没在运行就启动它
+                log!("Found existing container: {}", id);
+                
+                // 检查容器状态
                 if container.state.as_deref() != Some("running") {
+                    log!("Starting existing container...");
                     self.docker
                         .start_container(id, None::<StartContainerOptions<String>>)
-                        .await?;
+                        .await
+                        .map_err(|e| DockerError::Container(e.to_string()))?;
+                } else {
+                    log!("Container is already running");
                 }
+                
                 // 等待服务就绪
                 self.wait_for_services(id).await?;
                 return Ok(id.clone());
             }
         }
 
-        // 如果没有找到容器，创建新的
+        // 只有在没有找到现有容器时才创建新的
+        log!("No existing container found, creating new one...");
+        
+        // 创建新容器的代码
         let mut port_bindings = HashMap::new();
         
         // VNC端口映射
@@ -235,12 +287,22 @@ impl DockerManager {
         port_bindings.insert(String::from("6080/tcp"), Some(binding6080));
         port_bindings.insert(String::from("8080/tcp"), Some(binding8080));
 
+        // 获取 api-server 目录路径
+        let api_server_path = self.get_api_server_path()?;
+        
         let host_config = HostConfig {
             port_bindings: Some(port_bindings),
             privileged: Some(true),
-            binds: Some(vec![String::from("/tmp/.X11-unix:/tmp/.X11-unix:rw")]),
+            binds: Some(vec![
+                String::from("/tmp/.X11-unix:/tmp/.X11-unix:rw"),
+                format!("{}:/etc/supervisor/conf.d/supervisord.conf", self.get_supervisor_config_path()?),
+                // 使用验证过的 api-server 路径
+                format!("{}:/app/api-server", api_server_path.to_string_lossy()),
+            ]),
             ..Default::default()
         };
+
+        log!("Creating container with config: {:?}", host_config);
 
         let config = Config {
             image: Some(self.image_tag.clone()),
@@ -249,28 +311,43 @@ impl DockerManager {
                 String::from("DISPLAY=:1"),
                 String::from("WIDTH=1024"),
                 String::from("HEIGHT=768"),
+                String::from("RUST_LOG=debug"),
+                String::from("RUST_BACKTRACE=full"),
+                // Add other necessary environment variables here
             ]),
             ..Default::default()
         };
 
-        // 创建容器
         let container = self.docker
-            .create_container(
-                Some(CreateContainerOptions {
-                    name: "consoley",
-                    platform: None,
-                }),
-                config,
-            )
-            .await?;
+            .create_container(None::<CreateContainerOptions<String>>, config)
+            .await
+            .map_err(|e| {
+                let err_msg = format!("Failed to create container: {}", e);
+                log!("{}", err_msg);
+                DockerError::Container(err_msg)
+            })?;
 
-        // 启动容器
+        log!("Container created with ID: {}", container.id);
+
         self.docker
             .start_container(&container.id, None::<StartContainerOptions<String>>)
-            .await?;
+            .await
+            .map_err(|e| {
+                let err_msg = format!("Failed to start container: {}", e);
+                log!("{}", err_msg);
+                DockerError::Container(err_msg)
+            })?;
 
-        // 等待服务就绪
-        self.wait_for_services(&container.id).await?;
+        log!("Container started successfully");
+
+        // 等待容器完全启动并检查服务状态
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        
+        // 检查 supervisor 状态
+        let logs = self.get_container_logs(&container.id).await?;
+        if logs.contains("exited: api-server (exit status 1)") {
+            return Err("API server failed to start. Check supervisor logs for details.".into());
+        }
 
         Ok(container.id)
     }
@@ -362,6 +439,38 @@ impl DockerManager {
         // println!("Cleaning up existing containers...");
         // 清理逻辑...
         Ok(())
+    }
+
+    fn get_supervisor_config_path(&self) -> Result<String, DockerError> {
+        let config_name = if cfg!(debug_assertions) {
+            "supervisord.dev.conf"
+        } else {
+            "supervisord.conf"
+        };
+        
+        // 从当前目录（src-tauri）向上一级找到项目根目录
+        let current_dir = std::env::current_dir()
+            .map_err(|e| DockerError::IO(format!("Failed to get current directory: {}", e)))?;
+            
+        let project_root = current_dir
+            .parent() // 回到项目根目录
+            .ok_or_else(|| DockerError::IO("Failed to get project root directory".to_string()))?;
+            
+        let config_path = project_root
+            .join("docker")
+            .join("desktop")
+            .join(config_name);
+            
+        log!("Looking for supervisor config at: {}", config_path.display());
+            
+        if !config_path.exists() {
+            return Err(DockerError::IO(format!(
+                "Supervisor config file not found at: {}",
+                config_path.display()
+            )));
+        }
+        
+        Ok(config_path.to_string_lossy().to_string())
     }
 
 }

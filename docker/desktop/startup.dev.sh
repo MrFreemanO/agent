@@ -17,12 +17,16 @@ if [ ! -f "$HOME/.config/tint2/tint2rc" ]; then
     cp /home/consoley/.config/tint2/tint2rc "$HOME/.config/tint2/tint2rc"
 fi
 
-# 设置 mutter 配置
-cat > $HOME/.config/mutter/dconf << EOF
+# 设置 mutter 配置（以 consoley 用户身份执行）
+sudo -u consoley bash -c 'cat > $HOME/.config/mutter/dconf << EOF
 [/]
 dynamic-workspaces=false
 workspaces-only-on-primary=true
-EOF
+EOF'
+
+# 确保 mutter 配置目录存在并设置权限
+mkdir -p $HOME/.config/mutter
+sudo chown -R consoley:consoley $HOME/.config/mutter
 
 # 确保 Rust 环境安装完成
 if [ ! -d "/home/consoley/.cargo" ]; then
@@ -54,113 +58,28 @@ show_trash=1
 show_mounts=1
 EOF
 
-# # 创建桌面图标
-# echo "Creating desktop shortcuts..."
-# mkdir -p $HOME/Desktop
-# sudo chown -R consoley:consoley $HOME/Desktop
+# 确保 mutter 配置目录存在并设置权限
+mkdir -p $HOME/.config/mutter
+sudo chown -R consoley:consoley $HOME/.config/mutter
 
-# # 处理 Firefox 快捷方式
-# if [ ! -f "/usr/share/applications/firefox.desktop" ]; then
-#     echo "Firefox desktop file not found in default location."
-#     firefox_file=$(find /usr/share/applications -name "*firefox*.desktop" | head -n 1)
-#     if [ -n "$firefox_file" ]; then
-#         echo "Found alternative Firefox desktop file: $firefox_file"
-#         cp "$firefox_file" $HOME/Desktop/firefox.desktop
-#         echo "Copied Firefox desktop file. Status: $?"
-#     else
-#         echo "Creating a generic Firefox desktop file."
-#         cat > $HOME/Desktop/firefox.desktop << EOF
-# [Desktop Entry]
-# Version=1.0
-# Name=Firefox Web Browser
-# Exec=firefox-esr %u
-# Terminal=false
-# Type=Application
-# Icon=firefox-esr
-# Categories=Network;WebBrowser;
-# MimeType=text/html;text/xml;application/xhtml+xml;
-# StartupNotify=true
-# EOF
-#         echo "Created generic Firefox desktop file. Status: $?"
-#     fi
-# else
-#     cp /usr/share/applications/firefox.desktop $HOME/Desktop/
-#     echo "Copied default Firefox desktop file. Status: $?"
-# fi
+# 确保 api-server 目录存在并具有正确的权限
+sudo mkdir -p /app/api-server/target
+sudo chown -R consoley:consoley /app/api-server
+sudo chmod -R 755 /app/api-server
 
-# # 处理终端快捷方式
-# if [ ! -f "/usr/share/applications/terminal.desktop" ]; then
-#     echo "Terminal desktop file not found. Creating a generic one."
-#     cat > $HOME/Desktop/terminal.desktop << EOF
-# [Desktop Entry]
-# Version=1.0
-# Name=Terminal
-# Exec=x-terminal-emulator
-# Terminal=false
-# Type=Application
-# Icon=terminal
-# Categories=System;TerminalEmulator;
-# StartupNotify=true
-# EOF
-#     echo "Created generic terminal desktop file. Status: $?"
-# else
-#     cp /usr/share/applications/terminal.desktop $HOME/Desktop/
-#     echo "Copied terminal desktop file. Status: $?"
-# fi
+# 检查 Cargo.toml 是否存在
+if [ ! -f "/app/api-server/Cargo.toml" ]; then
+    echo "Cargo.toml 不存在，请确保 /app/api-server 目录中包含 Cargo.toml 文件。"
+    exit 1
+fi
 
-# # 确保文件存在并设置权限
-# if [ -d "$HOME/Desktop" ]; then
-#     chmod +x $HOME/Desktop/*.desktop 2>/dev/null
-#     sudo chown -R consoley:consoley $HOME/Desktop
-#     echo "Contents of Desktop folder:"
-#     ls -la $HOME/Desktop
-    
-#     # 验证文件内容
-#     echo "Firefox desktop file contents:"
-#     cat $HOME/Desktop/firefox.desktop 2>/dev/null || echo "Firefox desktop file not found"
-#     echo "Terminal desktop file contents:"
-#     cat $HOME/Desktop/terminal.desktop 2>/dev/null || echo "Terminal desktop file not found"
-    
-#     # 检查目录权限
-#     echo "Desktop directory permissions:"
-#     ls -ld $HOME/Desktop
-# fi
+# 确保 Cargo.lock 存在
+if [ ! -f "/app/api-server/Cargo.lock" ] && [ -f "/app/api-server/Cargo.toml" ]; then
+    cd /app/api-server && sudo -u consoley cargo generate-lockfile
+fi
 
-# # 初始化 Firefox 配置
-# sudo -u consoley bash -c 'echo "Initializing Firefox profile..."'
-# # echo "Initializing Firefox profile..."
-# FIREFOX_PROFILE_DIR="$HOME/.mozilla/firefox"
-# mkdir -p "$FIREFOX_PROFILE_DIR"
-
-# # 如果配置文件不存在，创建一个新的配置文件
-# if [ ! -f "$FIREFOX_PROFILE_DIR/profiles.ini" ]; then
-#     echo "Creating new Firefox profile..."
-#     mkdir -p "$FIREFOX_PROFILE_DIR/default"
-    
-#     # 创建 profiles.ini
-#     cat > "$FIREFOX_PROFILE_DIR/profiles.ini" << EOF
-# [Profile0]
-# Name=default
-# IsRelative=1
-# Path=default
-# Default=1
-
-# [General]
-# StartWithLastProfile=1
-# Version=2
-# EOF
-    
-#     # 创建基本配置文件¯
-#     cat > "$FIREFOX_PROFILE_DIR/default/prefs.js" << EOF
-# user_pref("browser.startup.homepage", "about:blank");
-# user_pref("browser.shell.checkDefaultBrowser", false);
-# user_pref("browser.tabs.warnOnClose", false);
-# EOF
-# fi
-
-# # 设置正确的权限
-# sudo chown -R consoley:consoley "$HOME/.mozilla"
-# chmod -R 700 "$HOME/.mozilla"
+# 预先构建依赖
+sudo -u consoley bash -c 'cd /app/api-server && source $HOME/.cargo/env && cargo check'
 
 # 以 root 用户启动 supervisord
 sudo -E supervisord -n -c /etc/supervisor/conf.d/supervisord.conf
@@ -168,3 +87,5 @@ sudo -E supervisord -n -c /etc/supervisor/conf.d/supervisord.conf
 # 设置必要的环境变量
 export XDG_CURRENT_DESKTOP=GNOME
 export XDG_DATA_DIRS="/usr/share:/usr/local/share:$HOME/.local/share"
+
+</```rewritten_file>

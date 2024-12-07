@@ -42,113 +42,34 @@ macro_rules! log {
 
 // 修改日志函数
 fn log_to_file(msg: &str) {
-    let log_path = std::env::temp_dir().join("consoley").join("app.log");
+    let log_dir = std::env::temp_dir().join("consoley");
+    let log_path = log_dir.join("app.log");
     
-    // 尝试创建日志目录，忽略可能的错误
-    if let Some(parent) = log_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    // 打印当前尝试写入的日志路径
+    println!("Attempting to write log to: {:?}", log_path);
+    
+    // 确保日志目录存在
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("Failed to create log directory: {}", e);
+        return;
     }
     
-    // 追加日志内容
-    if let Ok(mut file) = std::fs::OpenOptions::new()
+    // 尝试打开或创建日志文件
+    match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path) 
     {
-        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let _ = writeln!(file, "[{}] {}", timestamp, msg);
-    }
-}
-
-#[tauri::command]
-async fn start_container(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<Mutex<DockerState>>>,
-) -> Result<String, String> {
-    log!("Starting container process...");
-    let docker_manager = Arc::new(DockerManager::new().await.map_err(|e| e.to_string())?);
-    
-    // 检查是否已有运行的容器
-    log!("Checking for existing containers...");
-    match docker_manager.list_containers().await {
-        Ok(containers) => {
-            for container in containers {
-                if let Some(names) = container.names {
-                    if names.iter().any(|name| name.contains("consoley")) {
-                        if let Some(id) = container.id {
-                            log!("Found existing container: {}", id);   
-                            let mut state_guard = state.lock().await;
-                            state_guard.container_id = id.clone();
-                            state_guard.status = "running".to_string();
-                            return Ok(id);
-                        }
-                    }
-                }
+        Ok(mut file) => {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+            if let Err(e) = writeln!(file, "[{}] {}", timestamp, msg) {
+                eprintln!("Failed to write to log file: {}", e);
             }
         }
-        Err(e) => return Err(e.to_string()),
-    }
-
-    // 确保镜像存在
-    log!("Checking/building Docker image...");
-    let image_tag = if cfg!(debug_assertions) {
-        log!("Debug mode detected, using dev image");
-        "consoleai/desktop:dev"
-    } else {
-        log!("Release mode detected, using latest image");
-        "consoleai/desktop:latest"
-    };
-    
-    if let Err(e) = docker_manager.ensure_image(&app, image_tag).await {
-        let err_msg = format!("Failed to ensure image: {}", e);
-        log!("{}", err_msg);
-        return Err(err_msg);
-    }
-    
-    // 创建并启动容器
-    log!("Creating and starting container...");
-    let container_id = match docker_manager.create_and_start_container().await {
-        Ok(id) => {
-            log!("Container created with ID: {}", id);
-            id
-        },
-        Err(e) => return Err(format!("Failed to create container: {}", e)),
-    };
-    
-    // 更新状态
-    {
-        let mut state_guard = state.lock().await;
-        state_guard.container_id = container_id.clone();
-        state_guard.status = "running".to_string();
-    }
-    
-    // 添加API服务检查
-    log!("Checking API service...");
-    let check_api = async {
-        let client = reqwest::Client::new();
-        for i in 0..30 {
-            log!("API check attempt {}/30", i + 1);
-            match client.get("http://localhost:8090/health").send().await {
-                Ok(response) if response.status().is_success() => {
-                    log!("API server is ready");
-                    return Ok(());
-                }
-                _ => {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
+        Err(e) => {
+            eprintln!("Failed to open log file: {}", e);
         }
-        Err("API server failed to start".to_string())
-    };
-
-    if let Err(e) = check_api.await {
-        return Err(format!("API service check failed: {}", e));
     }
-    
-    log!("Container startup completed successfully");
-    app.emit("vnc-ready", ()).map_err(|e| e.to_string())?;
-    
-    Ok(container_id)
 }
 
 #[tauri::command]
@@ -215,14 +136,22 @@ async fn get_app_info(
 }
 
 fn main() {
-    log!("Application starting...");
-    log!("Log file location: {:?}", std::env::temp_dir().join("consoley").join("app.log"));
+    println!("Application starting...");
+    let log_path = std::env::temp_dir().join("consoley").join("app.log");
+    println!("Log file will be created at: {:?}", log_path);
+    
+    // 尝试创建日志目录
+    if let Err(e) = std::fs::create_dir_all(log_path.parent().unwrap()) {
+        eprintln!("Failed to create log directory: {}", e);
+    }
+    
+    log!("Application initialized");
     
     let mut app = tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle();
             
-            // 启动���器管理，但不执行清理
+            // 启动器管理，但不执行清理
             let app_handle_clone = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = setup_docker(&app_handle_clone).await {
@@ -234,7 +163,6 @@ fn main() {
         })
         .manage(Arc::new(Mutex::new(DockerState::default())))
         .invoke_handler(tauri::generate_handler![
-            start_container,
             stop_container,
             get_container_logs,
             restart_container,
