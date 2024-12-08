@@ -8,7 +8,7 @@ use docker::DockerManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri;
-use tauri::{Manager, RunEvent, WindowEvent, Emitter};
+use tauri::{RunEvent, WindowEvent, Emitter};
 use std::io::Write;
 use chrono;
 

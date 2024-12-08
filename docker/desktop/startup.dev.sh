@@ -18,6 +18,8 @@ if [ ! -f "$HOME/.config/tint2/tint2rc" ]; then
 fi
 
 # 设置 mutter 配置（以 consoley 用户身份执行）
+mkdir -p $HOME/.config/mutter
+sudo chown consoley:consoley $HOME/.config/mutter
 sudo -u consoley bash -c 'cat > $HOME/.config/mutter/dconf << EOF
 [/]
 dynamic-workspaces=false
@@ -87,5 +89,3 @@ sudo -E supervisord -n -c /etc/supervisor/conf.d/supervisord.conf
 # 设置必要的环境变量
 export XDG_CURRENT_DESKTOP=GNOME
 export XDG_DATA_DIRS="/usr/share:/usr/local/share:$HOME/.local/share"
-
-</```rewritten_file>

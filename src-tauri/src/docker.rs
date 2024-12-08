@@ -7,8 +7,7 @@ use std::sync::Arc;
 use crate::resources::extract_docker_image;
 use bytes::Bytes;
 use crate::log;
-use futures::stream::{self, BoxStream};
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use std::pin::Pin;
 use bollard::auth::DockerCredentials;
 use std::path::PathBuf;
@@ -478,9 +477,3 @@ impl DockerManager {
 // 实现 Send 和 Sync
 unsafe impl Send for DockerManager {}
 unsafe impl Sync for DockerManager {}
-
-fn tar_directory(path: &std::path::Path) -> Result<Vec<u8>, DockerError> {
-    let mut tar = tar::Builder::new(Vec::new());
-    tar.append_dir_all(".", path)?;
-    Ok(tar.into_inner()?)
-} 

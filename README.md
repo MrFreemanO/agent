@@ -1,38 +1,25 @@
 # ConsoleY
 
-ConsoleY 是一个轻量级的跨平台桌面应用，提供了一个隔离的 GUI 环境，允许 AI 像人类一样操作计算机。受 Anthropic 的 Computer Use 项目启发，ConsoleY 提供了一个安全、可控的环境，支持通过 API 进行屏幕截图、鼠标点击等操作。
+受Anthropic的 Computer Use 项目启发，我开发了ConsoleY，它提供了一个在Docker Container中运行的Ubuntu操作系统和GUI桌面，并且提供Rust API 接口，允许API通过本地或远程调用接口操作计算机进行截图、编辑文件、执行bash命令等操作。
 
-## ✨ 特性
+使用者还可以将Docker Container中的ConsoleY构建为桌面应用程序，方便使用和分发。桌面应用程序基于Tauri开发，支持跨平台。Docker内的API Server使用Rust语言开发。
 
-- 🖥️ 跨平台支持 (Windows, macOS, Linux)
-- 🔒 隔离的 Docker 容器环境
-- 🖱️ 完整的 GUI 桌面环境
-- 🛠️ RESTful API 接口
-- 📦 预装常用应用 (Firefox, LibreOffice 等)
-- 🎨 可自定义的桌面设置
-- 🔄 实时屏幕同步
-- 🎯 精确的鼠标和键盘控制
+这是我第一次使用Rust语言开发项目，很幸运在AI的辅助下，我最终成功完成了ConsoleY。
 
-## 🚀 快速开始
+## 使用方式
 
-### 用户安装
-从 [Releases](https://github.com/yourusername/consoley/releases) 页面下载适合您系统的安装包。
+ConsoleY可以分为开发环境和生产环境：
+- 开发环境：通过开发配置构建并启动，通过Cargo watch实时编译，方便调试API Server。
+- 生产环境：通过生产配置构建并启动，会将构建好的API Server和桌面环境打包成一个镜像，更方便使用和分发。
 
-#### 运行要求
-- Docker Desktop
-  - Windows: [下载 Docker Desktop](https://www.docker.com/products/docker-desktop)
-  - macOS: [下载 Docker Desktop](https://www.docker.com/products/docker-desktop)
-  - Linux: 使用包管理器安装 Docker Engine
+### 在开发环境中使用
 
-首次运行时，应用会自动下载所需的 Docker 镜像。
-
-### 开发环境要求
-以下依赖仅开发者需要安装：
-- [Docker](https://www.docker.com/get-started)
+#### 需要安装的依赖
+- [Docker Desktop](https://www.docker.com/get-started)
 - [Rust](https://rustup.rs/)
 - [Node.js](https://nodejs.org/) (>= 14.0.0)
 
-### 开发者安装
+#### 安装和使用步骤
 
 1. 克隆仓库
 
@@ -44,37 +31,84 @@ cd consoley
 2. 构建 Docker 镜像
 
 ```bash
-docker build -t consoleai/desktop:latest ./docker/desktop
+# 构建开发环境镜像
+docker-compose -f docker-compose.dev.yml build
+
+# 启动开发环境容器
+docker-compose -f docker-compose.dev.yml up -d
 ```
 
-3. 安装依赖
+这时，你已经可以通过6070端口访问桌面环境，并通过8090端口访问API Server。
+
+3. 启动桌面程序
 
 ```bash
 #安装前端依赖
 npm install
-#安装 Rust 依赖
-cd src-tauri
-cargo build
-cd ..
-```
 
-3. 启动开发环境
-```bash
+#启动桌面程序
 npm run tauri dev
 ```
 
-## 📡 API 接口
+4. API接口测试
 
-ConsoleY 提供以下 API 接口：
+```bash
+# 运行所有测试所有API接口
+cargo test
+
+# 运行指定测试
+cargo test --test <test_name>
 ```
-GET /computer # 使用计算机功能
-POST /edit # 编辑文件
-POST /bash # 执行 bash 命令
+
+### 构建和使用生产环境
+
+#### 构建Docker镜像
+
+```bash
+docker-compose -f docker-compose.yml build
 ```
 
-详细的 API 文档请参考 [API.md](docs/API.md)。
+#### 打包Mac桌面应用程序
 
-## 🛠️ 开发
+```bash
+# 构建镜像
+docker build -t consoleai/desktop:latest-arm64 -f docker/desktop/Dockerfile docker/desktop
+
+# 打包桌面应用程序
+cargo tauri build --target aarch64-apple-darwin
+
+# 通过命令行启动桌面应用程序
+/Applications/ConsoleY.app/Contents/MacOS/consoley
+```
+
+### 使用API调用Computer功能
+
+#### 本地调用
+
+使用者可以通过computer、edit、bash三个本地环境API接口调用桌面环境，以及health接口检查API Server状态。访问示例如下：
+
+```bash 
+# 截屏
+curl -X POST http://localhost:8090/computer -H "Content-Type: application/json" -d '{"action":"screenshot"}'
+
+# 编辑文件
+curl -X POST http://localhost:8090/edit -H "Content-Type: application/json" -d '{"command":"create","path":"/home/consoley/test.txt","file_text":"Hello, World!"}'
+
+# 执行bash命令
+curl -X POST http://localhost:8090/bash -H "Content-Type: application/json" -d '{"command":"echo Hello, World!"}'
+
+# 检查API Server状态
+curl -X GET http://localhost:8090/health
+```
+
+接口的具体调用参数与Anthropic的 Computer Use 项目中的定义基本相同，请参考[API.md](docs/API.md)。
+
+#### 远程调用
+需要通过tunnel隧道将本地8090端口映射到远程服务器，然后通过远程服务器地址调用API。
+
+#### 通过ConsoleX调用
+
+待补充
 
 ### 项目结构
 
