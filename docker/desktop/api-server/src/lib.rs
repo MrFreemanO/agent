@@ -577,7 +577,7 @@ async fn health_check() -> impl Responder {
     log::info!("Health check called");
     HttpResponse::Ok()
         .content_type("text/plain")
-        .body("Service is running...")
+        .body("Service is running")
 }
 
 #[post("/computer")]
