@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import * as Switch from "@radix-ui/react-switch";
 
 import './App.css';
@@ -75,18 +74,6 @@ function App() {
       setLoading(false);
     }
   };
-
-  // Listen for backend events
-  useEffect(() => {
-    const unlisten = listen('vnc-ready', () => {
-      console.log('Received vnc-ready event from backend');
-      checkAndRefreshVnc();
-    });
-
-    return () => {
-      unlisten.then(fn => fn());
-    };
-  }, []);
 
   // Check service status periodically
   useEffect(() => {

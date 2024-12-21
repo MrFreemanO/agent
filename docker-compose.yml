@@ -4,7 +4,9 @@ services:
     build:
       context: ./docker/desktop
       dockerfile: Dockerfile
+    image: consoley/desktop:dev
     privileged: true
+    working_dir: /app/api-server
     ports:
       - "5800:5900"  # VNC
       - "6070:6080"  # noVNC web access
@@ -12,10 +14,23 @@ services:
     environment:
       - DISPLAY=:1
       - RUST_LOG=debug
-      - RUST_BACKTRACE=1
       - WIDTH=1024
       - HEIGHT=768
+      - DEBIAN_FRONTEND=noninteractive
+      - USER=consoley
+      - HOME=/home/consoley
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./docker/desktop/api-server:/app/api-server:rw
+      - cargo-cache:/home/consoley/.cargo
+      - cargo-target:/app/api-server/target
+      - desktop-config:/home/consoley/.config
     cap_add:
       - SYS_ADMIN
+    command: ["sh", "-c", "chmod +x /startup.sh && /startup.sh"]
+    user: root
+
+volumes:
+  cargo-cache:
+  cargo-target:
+  desktop-config:

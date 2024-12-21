@@ -12,7 +12,7 @@ ENV LC_ALL=en_US.UTF-8
 
 # Set application information
 ENV APP_NAME="ConsoleY"
-ENV APP_VERSION="1.0.0"
+ENV APP_VERSION="0.0.1"
 
 # Set user information
 ENV USERNAME=consoley
@@ -39,12 +39,12 @@ RUN apt-get update && \
     locales \
     # UI requirements
     xvfb \
-    xterm \
     xdotool \
     scrot \
     imagemagick \
     mutter \
     x11vnc \
+    xfce4-terminal \
     # Development tools
     build-essential \
     pkg-config \
@@ -52,6 +52,14 @@ RUN apt-get update && \
     # Network tools
     net-tools \
     netcat \
+    libfm-gtk4 \
+    gvfs \
+    dconf-cli \
+    dbus-x11 \
+    gnome-settings-daemon \
+    feh \
+    pcmanfm \
+    unzip \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -60,14 +68,14 @@ RUN add-apt-repository ppa:mozillateam/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     firefox-esr \
+    x11-apps \
     libreoffice \
     xpaint \
     galculator \
     xpdf \
-    x11-apps \
     gedit \
-    pcmanfm \
     tint2 \
+    mutter \
     supervisor \
     xfce4-terminal \
     dbus-x11 \
@@ -96,7 +104,6 @@ RUN useradd -m -s /bin/bash -d $HOME $USERNAME && \
     mkdir -p $HOME/.vnc && \
     mkdir -p $HOME/.config && \
     mkdir -p $HOME/Desktop $HOME/Documents $HOME/Downloads && \
-    mkdir -p $HOME/.config/pcmanfm/default && \
     mkdir -p /tmp/.X11-unix && \
     mkdir -p /var/log/supervisor && \
     # Set VNC password
@@ -107,34 +114,28 @@ RUN useradd -m -s /bin/bash -d $HOME $USERNAME && \
     chown -R $USERNAME:$USERNAME $HOME && \
     chown -R $USERNAME:$USERNAME /var/log/supervisor
 
-# Stage 5: Install Rust and build API server
+# Stage 5: Install Rust development environment
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sudo -u $USERNAME sh -s -- -y && \
-    echo 'source $HOME/.cargo/env' >> $HOME/.bashrc
+    echo 'source $HOME/.cargo/env' >> $HOME/.bashrc && \
+    sudo -u $USERNAME bash -c 'source $HOME/.cargo/env && cargo install cargo-watch'
+
+# 创建必要的目录和权限
+RUN mkdir -p /var/run/dbus && \
+    mkdir -p /run/user/1000 && \
+    chown -R consoley:consoley /run/user/1000 && \
+    chmod 700 /run/user/1000
 
 # Copy configuration files
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY startup.sh /startup.sh
-COPY --chown=$USERNAME:$USERNAME desktop-config/ $HOME/.config/
-COPY --chown=$USERNAME:$USERNAME image/ $HOME/
+COPY desktop-config/ /home/consoley/.config/
+COPY image/.config/tint2/tint2rc /home/consoley/.config/tint2/
 
-# Install dos2unix for converting script file line endings
-RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y dos2unix && \
-    dos2unix /startup.sh
+# Create working directory
+WORKDIR /app/api-server
 
-# Setup API server build
-WORKDIR /build
-COPY --chown=$USERNAME:$USERNAME api-server/Cargo.toml ./
-COPY --chown=$USERNAME:$USERNAME api-server/src ./src/
-
-# Build API server
-RUN chown -R $USERNAME:$USERNAME /build && \
-    sudo -u $USERNAME bash -c 'source $HOME/.cargo/env && cargo build --release' && \
-    cp target/release/api-server /usr/local/bin/ && \
-    chmod +x /usr/local/bin/api-server && \
-    rm -rf /build
+# Set volume mount points
+VOLUME ["/app/api-server"]
 
 # Set permissions
 RUN chmod +x /startup.sh && \
@@ -142,10 +143,34 @@ RUN chmod +x /startup.sh && \
 
 # Switch to non-root user
 USER $USERNAME
-WORKDIR $HOME
 
 # Expose ports
 EXPOSE 5900 6080 8080
 
 # Startup command
 CMD ["/startup.sh"]
+
+# 创建必要的目录
+RUN mkdir -p /usr/lib/pcmanfm && \
+    mkdir -p /usr/lib/x86_64-linux-gnu/pcmanfm && \
+    mkdir -p /home/consoley/.config/pcmanfm/default && \
+    mkdir -p /home/consoley/Templates && \
+    mkdir -p /home/consoley/.local/share/pcmanfm && \
+    chmod 755 /usr/lib/pcmanfm && \
+    chmod 755 /usr/lib/x86_64-linux-gnu/pcmanfm && \
+    touch /home/consoley/.xsession-errors && \
+    chown consoley:consoley /home/consoley/.xsession-errors && \
+    chmod 644 /home/consoley/.xsession-errors && \
+    chown -R consoley:consoley /home/consoley/.config && \
+    chown -R consoley:consoley /home/consoley/Templates && \
+    chown -R consoley:consoley /home/consoley/.local
+
+# 复制桌面配置文件
+COPY desktop-config/pcmanfm/default/pcmanfm.conf /home/consoley/.config/pcmanfm/default/
+COPY desktop-config/pcmanfm/default/desktop-items-0.conf /home/consoley/.config/pcmanfm/default/
+
+# 设置配置文件权限
+RUN chown consoley:consoley /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
+    chown consoley:consoley /home/consoley/.config/pcmanfm/default/desktop-items-0.conf && \
+    chmod 644 /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
+    chmod 644 /home/consoley/.config/pcmanfm/default/desktop-items-0.conf
