@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-    <!-- 已有的配置 -->
-    
-    <!-- 添加完整的环境变量配置 -->
+<dict>    
+    <!-- Add complete environment variable configuration -->
     <key>LSEnvironment</key>
     <dict>
         <key>PATH</key>
@@ -13,7 +11,7 @@
         <string>unix:///var/run/docker.sock</string>
     </dict>
     
-    <!-- 添加文件访问权限 -->
+    <!-- Add file access permissions -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.files.downloads.read-write</key>

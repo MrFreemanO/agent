@@ -25,7 +25,7 @@ impl DockerManager {
         }
     }
 
-    // 检查 Docker 是否运行
+    // Check if Docker is running
     pub async fn check_docker_running(&self) -> Result<bool, DockerError> {
         let output = Command::new("docker")
             .args(["info"])
@@ -34,7 +34,7 @@ impl DockerManager {
         Ok(output.status.success())
     }
 
-    // 检查镜像是否存在
+    // Check if image exists
     pub async fn check_image_exists(&self) -> Result<bool, DockerError> {
         let output = Command::new("docker")
             .args(["images", "-q", &self.image_tag])
@@ -43,7 +43,7 @@ impl DockerManager {
         Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
     }
 
-    // 加载 Docker 镜像
+    // Load Docker image
     pub async fn load_image(&self) -> Result<(), DockerError> {
         println!("Extracting Docker image...");
         let image_path = resources::extract_docker_image().await
@@ -61,7 +61,7 @@ impl DockerManager {
         Ok(())
     }
 
-    // 检查容器是否存在
+    // Check if container exists
     pub async fn check_container_exists(&self) -> Result<bool, DockerError> {
         let output = Command::new("docker")
             .args(["ps", "-a", "-q", "-f", &format!("name={}", self.container_name)])
@@ -70,7 +70,7 @@ impl DockerManager {
         Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
     }
 
-    // 创建容器
+    // Create container
     pub async fn create_container(&self) -> Result<(), DockerError> {
         println!("Creating Docker container...");
         let status = Command::new("docker")
@@ -93,7 +93,7 @@ impl DockerManager {
         Ok(())
     }
 
-    // 启动容器
+    // Start container
     pub async fn start_container(&self) -> Result<(), DockerError> {
         println!("Starting Docker container...");
         let status = Command::new("docker")
@@ -104,13 +104,13 @@ impl DockerManager {
             return Err(DockerError("Failed to start container".to_string()));
         }
 
-        // 等待容器完全启动
+        // Wait for container to fully start
         sleep(Duration::from_secs(2)).await;
 
         Ok(())
     }
 
-    // 停止容器
+    // Stop container
     pub async fn stop_container(&self) -> Result<(), DockerError> {
         println!("Stopping Docker container...");
         let status = Command::new("docker")
@@ -124,7 +124,7 @@ impl DockerManager {
         Ok(())
     }
 
-    // 删除容器
+    // Remove container
     pub async fn remove_container(&self) -> Result<(), DockerError> {
         println!("Removing Docker container...");
         let status = Command::new("docker")
@@ -138,31 +138,31 @@ impl DockerManager {
         Ok(())
     }
 
-    // 确保容器运行
+    // Ensure container is running
     pub async fn ensure_container_running(&self) -> Result<(), DockerError> {
-        // 检查 Docker 是否运行
+        // Check if Docker is running
         if !self.check_docker_running().await? {
             return Err(DockerError("Docker is not running".to_string()));
         }
 
-        // 检查镜像是否存在，不存在则加载
+        // Check if image exists, load if not
         if !self.check_image_exists().await? {
             self.load_image().await?;
         }
 
-        // 检查容器是否存在，存在则删除
+        // Check if container exists, remove if exists
         if self.check_container_exists().await? {
             self.remove_container().await?;
         }
 
-        // 创建并启动容器
+        // Create and start container
         self.create_container().await?;
         self.start_container().await?;
 
         Ok(())
     }
 
-    // 获取容器状态
+    // Get container status
     pub async fn get_container_status(&self) -> Result<String, DockerError> {
         let output = Command::new("docker")
             .args(["inspect", "-f", "{{.State.Status}}", &self.container_name])

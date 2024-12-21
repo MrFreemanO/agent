@@ -4,8 +4,8 @@ use std::process::Command;
 use std::fs;
 use base64::{Engine as _, engine::general_purpose};
 use actix_web::middleware::Logger;
-use tokio::time::{timeout, sleep, Duration};
-use std::{io::Write, process::Stdio};
+use tokio::time::{timeout, Duration};
+use std::process::Stdio;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -470,7 +470,6 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         match fs::read_to_string(&req.path) {
                             Ok(content) => {
                                 let new_content = content.replace(old_str, new_str);
-                                // 创建备份文件
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
@@ -506,7 +505,6 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 let mut lines: Vec<&str> = content.lines().collect();
                                 let line_idx = *line_num as usize;
                                 
-                                // 创备份文件
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
@@ -605,31 +603,26 @@ struct BashSession {
     process: tokio::process::Child,
     stdin: tokio::process::ChildStdin,
     stdout: tokio::process::ChildStdout,
-    stderr: tokio::process::ChildStderr,
     timed_out: bool,
 }
 
 impl BashSession {
     const TIMEOUT: Duration = Duration::from_secs(30);
-    const OUTPUT_DELAY: Duration = Duration::from_millis(50);
     
     async fn new() -> Result<Self, String> {
         let mut child = tokio::process::Command::new("/bin/bash")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to spawn bash: {}", e))?;
 
         let stdin = child.stdin.take().ok_or("Failed to open stdin")?;
         let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
-        let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
 
         Ok(BashSession {
             process: child,
             stdin,
             stdout,
-            stderr,
             timed_out: false,
         })
     }
@@ -661,7 +654,7 @@ impl BashSession {
         let mut output = String::new();
         let mut buffer = [0u8; 1024];
 
-        // 使用timeout包装读取操作
+        // Wrap read operation with timeout
         match timeout(Self::TIMEOUT, async {
             loop {
                 match self.stdout.read(&mut buffer).await {
@@ -670,7 +663,7 @@ impl BashSession {
                         output.push_str(&chunk);
                         log::debug!("Read chunk: {}", chunk);
                         
-                        // 检查是否遇到结束标记
+                        // Check if end marker is encountered
                         if output.contains("---END---") {
                             log::info!("Found end marker");
                             break;
@@ -691,7 +684,6 @@ impl BashSession {
         .await
         {
             Ok(Ok(_)) => {
-                // 移除结束标记
                 if let Some(pos) = output.find("---END---") {
                     output.truncate(pos);
                 }
@@ -713,23 +705,23 @@ impl BashSession {
     }
 
     async fn stop(&mut self) -> Result<(), String> {
-        // 发送退出命令
+        // Send exit command
         self.stdin
             .write_all(b"exit\n")
             .await
             .map_err(|e| format!("Failed to send exit command: {}", e))?;
         
-        // 等待进程结束
+        // Wait for process to exit
         match timeout(Duration::from_secs(5), self.process.wait()).await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => {
                 log::warn!("Process didn't exit cleanly: {}", e);
-                // 强制结束进程
+                // Force kill process
                 self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
                 Ok(())
             },
             Err(_) => {
-                // 超时后强制结束进程
+                // Force kill process after timeout
                 self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
                 Ok(())
             }
@@ -745,16 +737,16 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
     let session_mutex = BASH_SESSION.get_or_init(|| Mutex::new(None));
     let mut session_guard = session_mutex.lock().unwrap();
     
-    // 处理restart请求
+    // Handle restart request
     if req.restart.unwrap_or(false) {
-        // 如果存在旧session，先停止它
+        // If old session exists, stop it
         if let Some(mut session) = session_guard.take() {
             if let Err(e) = session.stop().await {
                 log::warn!("Failed to stop bash session: {}", e);
             }
         }
         
-        // 创建新session
+        // Create new session
         match BashSession::new().await {
             Ok(new_session) => {
                 *session_guard = Some(new_session);
@@ -768,9 +760,9 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
         }
     }
 
-    // 处理命令请求
+    // Handle command request
     if let Some(command) = &req.command {
-        // 确保session存在
+        // Ensure session exists
         if session_guard.is_none() {
             match BashSession::new().await {
                 Ok(new_session) => {
@@ -782,7 +774,7 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
             }
         }
 
-        // 执行命令
+        // Execute command
         if let Some(session) = session_guard.as_mut() {
             match session.execute(command).await {
                 Ok((stdout, stderr)) => {
@@ -813,11 +805,11 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
 }
 
 pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::Server> {
-    // 在程序启动时立即打印
-    eprintln!("=== Server starting ===");  // 使用 eprintln! 确保输出到标准错误
+    // Print immediately when program starts
+    eprintln!("=== Server starting ===");  // Use eprintln! to ensure output to standard error
     
     let server = HttpServer::new(move || {
-        eprintln!("=== Creating new worker ===");  // 添加工作进程创建日志
+        eprintln!("=== Creating new worker ===");  // Add worker creation log
         App::new()
             .wrap(Logger::default())
             .wrap(actix_web::middleware::NormalizePath::trim())
@@ -832,6 +824,6 @@ pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::S
     .listen(listener)?
     .run();
 
-    eprintln!("=== Server started ===");  // 添加服务器启动完成日志
+    eprintln!("=== Server started ===");  // Add server startup completion log
     Ok(server)
 } 

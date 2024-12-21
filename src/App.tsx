@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import * as Switch from "@radix-ui/react-switch";
 
@@ -12,21 +11,35 @@ function App() {
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 30;
 
-  // 检查端口是否可访问
+  // Check if port is accessible
   const checkPort = async (port: number): Promise<boolean> => {
-    console.log(`Attempting to check port ${port}...`);
+    console.log(`Checking VNC port ${port}...`);
     try {
-        const url = `http://localhost:${port}/vnc.html`;
-        console.log(`Fetching ${url}...`);
-        const response = await fetch(url, {
-            method: 'HEAD',
-            mode: 'no-cors'
-        });
-        console.log(`Port ${port} check response:`, response);
-        return true;
+      // Create WebSocket connection to VNC port
+      const ws = new WebSocket(`ws://localhost:${port}`);
+      
+      return new Promise((resolve) => {
+        ws.onopen = () => {
+          console.log(`Successfully connected to VNC port ${port}`);
+          ws.close();
+          resolve(true);
+        };
+        
+        ws.onerror = (error) => {
+          console.error(`Failed to connect to VNC port ${port}:`, error);
+          resolve(false);
+        };
+        
+        // Set connection timeout
+        setTimeout(() => {
+          console.log(`Connection to port ${port} timed out`);
+          ws.close();
+          resolve(false);
+        }, 2000);
+      });
     } catch (error) {
-        console.error(`Port ${port} check failed:`, error);
-        return false;
+      console.error(`Error checking port ${port}:`, error);
+      return false;
     }
   };
 
@@ -34,14 +47,16 @@ function App() {
     console.log(`Checking VNC service (attempt ${retryCount + 1}/${maxRetries})...`);
     
     try {
-      const isNoVNCReady = await checkPort(6070);
+      // Check VNC port (5800)
+      const isVNCReady = await checkPort(5800);
       
-      if (isNoVNCReady) {
-        console.log('noVNC service is ready, updating status...');
+      if (isVNCReady) {
+        console.log('VNC service is ready, updating status...');
         setStatus('running');
         setLoading(false);
+        setRetryCount(0);
       } else {
-        console.log('noVNC service not ready yet, retrying...');
+        console.log('VNC service not ready yet, retrying...');
         retryConnection();
       }
     } catch (error) {
@@ -61,23 +76,7 @@ function App() {
     }
   };
 
-  const startContainer = async () => {
-    try {
-      setLoading(true);
-      setRetryCount(0);
-      console.log("Starting container...");
-      
-      await invoke('start_container');
-      console.log("Container started successfully");
-      
-    } catch (error) {
-      console.error('Container start error:', error);
-      setStatus('error');
-      setLoading(false);
-    }
-  };
-
-  // 监听后端事件
+  // Listen for backend events
   useEffect(() => {
     const unlisten = listen('vnc-ready', () => {
       console.log('Received vnc-ready event from backend');
@@ -89,7 +88,7 @@ function App() {
     };
   }, []);
 
-  // 定期检查服务状态
+  // Check service status periodically
   useEffect(() => {
     let intervalId: number;
 
@@ -106,18 +105,15 @@ function App() {
     };
   }, [status, loading]);
 
-  // 组件挂载时自动启动容器
-  useEffect(() => {
-    // startContainer();
-  }, []);
-
   return (
     <div className="container">
       <div className='container_content'>
         <div className='title_container'>
-          <div>ConsoleY</div>
+          <div>
+            ConsoleY
+          </div>
           <div className='container_option_content_item'>
-            <div className='container_option_content_item_label'>允许人类操作界面</div>
+            <div className='container_option_content_item_label'>Allow human operation</div>
             <div className='container_option_content_item_com'>
               <Switch.Root 
                 className={checked ? "SwitchRoot" : "SwitchNoRoot"} 
@@ -133,8 +129,14 @@ function App() {
           {!checked && <div className="vnc-container_model" />}
           {loading ? (
             <div className="placeholder">
-              Loading... {retryCount > 0 && `(Attempt ${retryCount}/${maxRetries})`}
-              <div>Status: {status}</div>
+              <div className="loading-spinner" />
+              <div>
+                {retryCount > 0 ? 
+                  `Connecting to remote desktop... (${retryCount}/${maxRetries})` : 
+                  'Connecting to remote desktop...'
+                }
+              </div>
+              <div className="status-text">Status: {status}</div>
             </div>
           ) : status === 'running' ? (
             <iframe
@@ -149,9 +151,25 @@ function App() {
             />
           ) : (
             <div className="placeholder">
-              {status === 'error' ? 
-                'Failed to connect to remote desktop' : 
-                'Remote desktop will appear here when started'}
+              {status === 'error' ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12" y2="16"/>
+                  </svg>
+                  <div>Remote desktop connection failed</div>
+                </>
+              ) : (
+                <>
+                  <div className="loading-placeholder">
+                    <div className="loading-spinner-container">
+                      <span className="load_animation"></span>
+                    </div>
+                  </div>
+                  {/* <div>Loading desktop...</div> */}
+                </>
+              )}
             </div>
           )}
         </div>

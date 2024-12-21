@@ -7,8 +7,8 @@ services:
     privileged: true
     ports:
       - "5800:5900"  # VNC
-      - "6070:6080"  # noVNC web访问
-      - "8090:8080"  # API服务
+      - "6070:6080"  # noVNC web access
+      - "8090:8080"  # API service
     environment:
       - DISPLAY=:1
       - RUST_LOG=debug

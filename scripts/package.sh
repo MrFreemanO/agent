@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# 确保docker镜像已经构建
+# Ensure docker image is built
 docker build -t consoleai/desktop:latest ./docker/desktop
 
-# 运行tauri构建
+# Run tauri build
 npm run tauri build
 
-# 对于macOS，创建DMG
+# For macOS, create DMG
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # 创建DMG
+    # Create DMG
     create-dmg \
         --volname "ConsoleY" \
         --window-pos 200 120 \

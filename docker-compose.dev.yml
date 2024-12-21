@@ -9,8 +9,8 @@ services:
     working_dir: /app/api-server
     ports:
       - "5800:5900"  # VNC
-      - "6070:6080"  # noVNC web访问
-      - "8090:8080"  # API服务
+      - "6070:6080"  # noVNC web access
+      - "8090:8080"  # API service
       - "9229:9229"    # Debug
     environment:
       - DISPLAY=:1

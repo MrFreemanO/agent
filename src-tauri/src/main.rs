@@ -12,7 +12,7 @@ use tauri::{RunEvent, WindowEvent, Emitter};
 use std::io::Write;
 use chrono;
 
-// 确保 DockerState 是 Send + Sync
+// Ensure DockerState is Send + Sync
 #[derive(Debug)]
 struct DockerState {
     container_id: String,
@@ -30,7 +30,7 @@ impl Default for DockerState {
     }
 }
 
-// 添加日志宏定义
+// Add log macro definition
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {{
@@ -40,21 +40,18 @@ macro_rules! log {
     }};
 }
 
-// 修改日志函数
+// Modify log function
 fn log_to_file(msg: &str) {
-    let log_dir = std::env::temp_dir().join("consoley");
+    let log_dir = std::path::PathBuf::from("/tmp/consoley");
     let log_path = log_dir.join("app.log");
     
-    // 打印当前尝试写入的日志路径
-    println!("Attempting to write log to: {:?}", log_path);
-    
-    // 确保日志目录存在
+    // Ensure log directory exists
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
         eprintln!("Failed to create log directory: {}", e);
         return;
     }
     
-    // 尝试打开或创建日志文件
+    // Try to open or create log file
     match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -137,21 +134,21 @@ async fn get_app_info(
 
 fn main() {
     println!("Application starting...");
-    let log_path = std::env::temp_dir().join("consoley").join("app.log");
+    let log_path = std::path::PathBuf::from("/tmp/consoley/app.log");
     println!("Log file will be created at: {:?}", log_path);
     
-    // 尝试创建日志目录
-    if let Err(e) = std::fs::create_dir_all(log_path.parent().unwrap()) {
+    // Try to create log directory
+    if let Err(e) = std::fs::create_dir_all("/tmp/consoley") {
         eprintln!("Failed to create log directory: {}", e);
     }
     
     log!("Application initialized");
     
-    let mut app = tauri::Builder::default()
+    let app = tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle();
             
-            // 启动器管理，但不执行清理
+            // Launcher management without cleanup
             let app_handle_clone = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = setup_docker(&app_handle_clone).await {
@@ -171,8 +168,8 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // 仅在窗口关闭时执行清理
-    app.run(|app_handle, event| {
+    // Only perform cleanup when window closes
+    app.run(|_app_handle, event| {
         match event {
             RunEvent::WindowEvent { 
                 label: _, 
@@ -201,7 +198,7 @@ async fn setup_docker(app: &tauri::AppHandle) -> Result<(), String> {
         err_msg
     })?);
     
-    // 确保镜像存在
+    // Ensure image exists
     let image_tag = if cfg!(debug_assertions) {
         log!("Debug mode detected, using dev image");
         "consoleai/desktop:dev"
@@ -217,13 +214,13 @@ async fn setup_docker(app: &tauri::AppHandle) -> Result<(), String> {
         return Err(err_msg);
     }
     
-    // 创建并启动容器
+    // Create and start container
     log!("Creating and starting container...");
     match docker_manager.create_and_start_container().await {
         Ok(container_id) => {
             log!("Container started successfully with ID: {}", container_id);
             
-            // 发送服务就绪事件
+            // Send service ready event
             app.emit("vnc-ready", ()).map_err(|e| e.to_string())?;
             
             Ok(())

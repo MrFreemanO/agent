@@ -1,6 +1,6 @@
 use bollard::Docker;
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions, ListContainersOptions};
-use bollard::image::{ListImagesOptions, CreateImageOptions, ImportImageOptions};
+use bollard::image::ListImagesOptions;
 use bollard::models::{HostConfig, PortBinding, ContainerSummary};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,8 +8,6 @@ use crate::resources::extract_docker_image;
 use bytes::Bytes;
 use crate::log;
 use futures::{StreamExt, TryStreamExt};
-use std::pin::Pin;
-use bollard::auth::DockerCredentials;
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -33,7 +31,7 @@ impl std::fmt::Display for DockerError {
     }
 }
 
-// 添加错误转换实现
+// Add error conversion implementation
 impl From<bollard::errors::Error> for DockerError {
     fn from(err: bollard::errors::Error) -> Self {
         DockerError::Container(err.to_string())
@@ -70,6 +68,7 @@ impl DockerManager {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn list_containers(&self) -> Result<Vec<ContainerSummary>, DockerError> {
         self.docker.list_containers::<String>(None)
             .await
@@ -83,7 +82,7 @@ impl DockerManager {
 
         log!("Ensuring Docker image: {}", image_tag);
 
-        // 检查镜像是否存在
+        // Check if the image exists
         let images = self.docker
             .list_images(Some(ListImagesOptions::<String> {
                 all: true,
@@ -106,21 +105,21 @@ impl DockerManager {
             
             log!("Loading Docker image from: {:?}", image_path);
 
-            // 读取镜像文件
+            // Read the image file
             let image_data = tokio::fs::read(&image_path).await
                 .map_err(|e| DockerError::IO(format!("Failed to read image file: {}", e)))?;
             
             log!("Loading Docker image using bollard");
 
-            // 将镜像数据直接转换为 Bytes
+            // Convert the image data directly to Bytes
             let image_bytes = Bytes::from(image_data);
 
-            // 使用 import_image 导入镜像
+            // Use import_image to import the image
             self.docker.import_image(
                 bollard::image::ImportImageOptions {
                     ..Default::default()
                 },
-                image_bytes, // 直接传递 Bytes
+                image_bytes, // Pass Bytes directly
                 None,
             )
             .try_collect::<Vec<_>>()
@@ -134,10 +133,11 @@ impl DockerManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn cleanup_existing_container(&self) -> Result<(), DockerError> {
         log!("Cleaning up existing containers...");
     
-        // 列出所有相关容器（包括停止的）
+        // List all related containers (including stopped)
         let containers = self.docker
             .list_containers(Some(ListContainersOptions::<String> {
                 all: true,
@@ -155,12 +155,12 @@ impl DockerManager {
             if let Some(id) = container.id {
                 log!("Removing container: {}", id);
     
-                // 停止容器
+                // Stop the container
                 let _ = self.docker
                     .stop_container(&id, None)
                     .await;
     
-                // 删除容器
+                // Remove the container
                 self.docker
                     .remove_container(
                         &id,
@@ -174,7 +174,7 @@ impl DockerManager {
             }
         }
     
-        // 等待一段时间确保资源释放
+        // Wait for a while to ensure resources are released
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     
         Ok(())
@@ -185,7 +185,7 @@ impl DockerManager {
             .map_err(|e| DockerError::IO(format!("Failed to get current directory: {}", e)))?;
             
         let project_root = current_dir
-            .parent() // 回到项目根目录
+            .parent() // Go back to the project root directory
             .ok_or_else(|| DockerError::IO("Failed to get project root directory".to_string()))?;
             
         let api_server_path = project_root
@@ -219,13 +219,13 @@ impl DockerManager {
     }
 
     pub async fn create_and_start_container(&self) -> Result<String, Box<dyn std::error::Error>> {
-        // 验证 api-server 路径
+        // Verify api-server path
         self.verify_api_server_path().await?;
         
         log!("Checking for existing containers...");
         let containers = self.docker
             .list_containers(Some(ListContainersOptions::<String> {
-                all: true, // 包括停止的容器
+                all: true, // Include stopped containers
                 filters: {
                     let mut filters = HashMap::new();
                     filters.insert("name".to_string(), vec!["consoley".to_string()]);
@@ -236,12 +236,12 @@ impl DockerManager {
             .await
             .map_err(|e| DockerError::Container(e.to_string()))?;
 
-        // 如果找到已存在的容器，尝试复用
+        // If an existing container is found, try to reuse it
         if let Some(container) = containers.first() {
             if let Some(id) = &container.id {
                 log!("Found existing container: {}", id);
                 
-                // 检查容器状态
+                // Check container status
                 if container.state.as_deref() != Some("running") {
                     log!("Starting existing container...");
                     self.docker
@@ -252,31 +252,31 @@ impl DockerManager {
                     log!("Container is already running");
                 }
                 
-                // 等待服务就绪
+                // Wait for services to be ready
                 self.wait_for_services(id).await?;
                 return Ok(id.clone());
             }
         }
 
-        // 只有在没有找到现有容器时才创建新的
+        // Only create a new one if no existing container is found
         log!("No existing container found, creating new one...");
         
-        // 创建新容器的代码
+        // Create new container code
         let mut port_bindings = HashMap::new();
         
-        // VNC端口映射
+        // VNC port mapping
         let binding5900 = vec![PortBinding {
             host_ip: Some(String::from("127.0.0.1")),
             host_port: Some(String::from("5800")),
         }];
         
-        // noVNC端口映射
+        // noVNC port mapping
         let binding6080 = vec![PortBinding {
             host_ip: Some(String::from("127.0.0.1")),
             host_port: Some(String::from("6070")),
         }];
         
-        // API服务端口映射
+        // API server port mapping
         let binding8080 = vec![PortBinding {
             host_ip: Some(String::from("127.0.0.1")),
             host_port: Some(String::from("8090")),
@@ -286,7 +286,7 @@ impl DockerManager {
         port_bindings.insert(String::from("6080/tcp"), Some(binding6080));
         port_bindings.insert(String::from("8080/tcp"), Some(binding8080));
 
-        // 获取 api-server 目录路径
+        // Get api-server directory path
         let api_server_path = self.get_api_server_path()?;
         
         let host_config = HostConfig {
@@ -295,13 +295,13 @@ impl DockerManager {
             binds: Some(vec![
                 String::from("/tmp/.X11-unix:/tmp/.X11-unix:rw"),
                 format!("{}:/etc/supervisor/conf.d/supervisord.conf", self.get_supervisor_config_path()?),
-                // 使用验证过的 api-server 路径
+                // Use verified api-server path
                 format!("{}:/app/api-server", api_server_path.to_string_lossy()),
             ]),
             ..Default::default()
         };
 
-        log!("Creating container with config: {:?}", host_config);
+        log!("Creating container with config");
 
         let config = Config {
             image: Some(self.image_tag.clone()),
@@ -312,13 +312,18 @@ impl DockerManager {
                 String::from("HEIGHT=768"),
                 String::from("RUST_LOG=debug"),
                 String::from("RUST_BACKTRACE=full"),
-                // Add other necessary environment variables here
             ]),
             ..Default::default()
         };
 
         let container = self.docker
-            .create_container(None::<CreateContainerOptions<String>>, config)
+            .create_container(
+                Some(CreateContainerOptions {
+                    name: "consoley-desktop",
+                    platform: None,
+                }),
+                config
+            )
             .await
             .map_err(|e| {
                 let err_msg = format!("Failed to create container: {}", e);
@@ -339,10 +344,10 @@ impl DockerManager {
 
         log!("Container started successfully");
 
-        // 等待容器完全启动并检查服务状态
+        // Wait for the container to fully start and check service status
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         
-        // 检查 supervisor 状态
+        // Check supervisor status
         let logs = self.get_container_logs(&container.id).await?;
         if logs.contains("exited: api-server (exit status 1)") {
             return Err("API server failed to start. Check supervisor logs for details.".into());
@@ -351,14 +356,14 @@ impl DockerManager {
         Ok(container.id)
     }
 
-    // 加待服务就绪的方法
+    // Add a method to wait for services to be ready
     async fn wait_for_services(&self, container_id: &str) -> Result<(), DockerError> {
         log!("Waiting for services to be ready...");
         
-        // 等待完全启动
+        // Wait for full startup
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         
-        // 检容器状态
+        // Check container status
         let container_info = self.docker
             .inspect_container(container_id, None)
             .await
@@ -368,7 +373,7 @@ impl DockerManager {
             return Err(DockerError::Container("Container is not running".to_string()));
         }
 
-        // 等待服务就绪
+        // Wait for services to be ready
         let mut retries = 0;
         const MAX_RETRIES: i32 = 30;
         
@@ -433,10 +438,10 @@ impl DockerManager {
         Ok(())
     }
 
-    // 添加一个公共的清理方法
+    // Add a public cleanup method
     pub async fn cleanup(&self) -> Result<(), DockerError> {
         // println!("Cleaning up existing containers...");
-        // 清理逻辑...
+        // Cleanup logic...
         Ok(())
     }
 
@@ -447,12 +452,12 @@ impl DockerManager {
             "supervisord.conf"
         };
         
-        // 从当前目录（src-tauri）向上一级找到项目根目录
+        // Go up one level from the current directory (src-tauri) to find the project root directory
         let current_dir = std::env::current_dir()
             .map_err(|e| DockerError::IO(format!("Failed to get current directory: {}", e)))?;
             
         let project_root = current_dir
-            .parent() // 回到项目根目录
+            .parent() // Go back to the project root directory
             .ok_or_else(|| DockerError::IO("Failed to get project root directory".to_string()))?;
             
         let config_path = project_root
@@ -474,6 +479,6 @@ impl DockerManager {
 
 }
 
-// 实现 Send 和 Sync
+// Implement Send and Sync
 unsafe impl Send for DockerManager {}
 unsafe impl Sync for DockerManager {}

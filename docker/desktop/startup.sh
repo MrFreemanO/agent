@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# 使用临时目录存储配置
+# Use temporary directory for configuration
 SUPERVISOR_CONF_FILE=/tmp/supervisord.conf
 
-# 创建supervisord配置文件
+# Create supervisord configuration file
 cat > "$SUPERVISOR_CONF_FILE" << EOF
 [supervisord]
 nodaemon=true
@@ -25,7 +25,6 @@ stderr_logfile=/var/log/supervisor/mutter.err
 
 [program:x11vnc]
 command=/usr/bin/x11vnc -display :1 -no6 -forever -shared -wait 50 -rfbport 5900 -nopw 
-
 autorestart=true
 stdout_logfile=/var/log/supervisor/x11vnc.log
 stderr_logfile=/var/log/supervisor/x11vnc.err
@@ -60,14 +59,12 @@ stdout_logfile=/var/log/supervisor/api-server.log
 stderr_logfile=/var/log/supervisor/api-server.err
 EOF
 
-# 创建日志目录
+# Create log directory
 mkdir -p /var/log/supervisor
 chown -R consoley:consoley /var/log/supervisor
 
-# 设置桌面环境
+# Setup desktop environment
 mkdir -p $HOME/Desktop $HOME/Documents $HOME/Downloads
 
-# 创建桌面快捷方式
-
-# 启动supervisord
+# Start supervisord
 exec supervisord -n -c "$SUPERVISOR_CONF_FILE"
