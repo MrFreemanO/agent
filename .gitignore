@@ -69,3 +69,7 @@ lerna-debug.log*
 
 # node_modules
 node_modules/
+
+# 不忽略桌面配置文件
+!docker/desktop/desktop-config/pcmanfm/default/pcmanfm.conf
+!docker/desktop/desktop-config/pcmanfm/default/desktop-items-0.conf
