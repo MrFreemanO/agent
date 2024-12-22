@@ -8,11 +8,28 @@ export USER=consoley
 # Create necessary directories and files
 mkdir -p /var/log/supervisor
 mkdir -p /var/run
-mkdir -p $HOME/.config
+mkdir -p $HOME/.config/pcmanfm/default
+
+# Set up desktop background
+cat > $HOME/.config/pcmanfm/default/desktop-items-0.conf << EOF
+[*]
+wallpaper_mode=crop
+wallpaper=/usr/share/backgrounds/christmas.png
+desktop_bg=#000000
+desktop_shadow=#000000
+desktop_font=Sans 12
+folder=
+show_wm_menu=0
+sort=mtime;ascending;
+show_documents=0
+show_trash=0
+show_mounts=0
+EOF
 
 # Set up the correct permissions
-chown -R consoley:consoley $HOME
+chown -R consoley:consoley $HOME/.config
 chmod -R 755 $HOME/.config
+chmod 644 $HOME/.config/pcmanfm/default/desktop-items-0.conf
 
 # Start supervisor
 exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf

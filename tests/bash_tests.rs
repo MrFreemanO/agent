@@ -7,11 +7,10 @@ async fn wait_for_service() {
     for i in 0..60 {
         if let Ok(response) = client
             .get("http://localhost:8090/health")
-            .timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(2))
             .send()
             .await {
             if response.status().is_success() {
-                tokio::time::sleep(Duration::from_secs(2)).await;
                 println!("Service is ready after {} seconds", i);
                 return;
             }
@@ -31,27 +30,13 @@ async fn test_bash_request(command: Option<&str>, restart: Option<bool>) -> reqw
         "restart": restart
     });
     
-    for i in 0..3 {
-        match client
-            .post("http://localhost:8090/bash")
-            .json(&payload)
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await {
-                Ok(response) => {
-                    return response;
-                },
-                Err(e) => {
-                    println!("Request failed (attempt {}/3): {}", i + 1, e);
-                    if i == 2 {
-                        panic!("All retry attempts failed: {}", e);
-                    }
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-    }
-    
-    panic!("Should not reach here");
+    client
+        .post("http://localhost:8090/bash")
+        .json(&payload)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to execute request")
 }
 
 #[tokio::test]
@@ -61,8 +46,8 @@ async fn test_basic_bash_commands() {
     // Test echo command
     let response = test_bash_request(Some("echo 'Hello World'"), None).await;
     assert_eq!(response.status().as_u16(), 200);
-    let body = response.text().await.expect("Failed to get response text");
-    assert_eq!(body.trim(), "Hello World");
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert_eq!(body["data"].as_str().unwrap().trim(), "Hello World");
 }
 
 #[tokio::test]
@@ -76,8 +61,8 @@ async fn test_session_restart() {
     // Echo the variable
     let response = test_bash_request(Some("echo $TEST_VAR"), None).await;
     assert_eq!(response.status().as_u16(), 200);
-    let body = response.text().await.expect("Failed to get response text");
-    assert_eq!(body.trim(), "hello");
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert_eq!(body["data"].as_str().unwrap().trim(), "hello");
     
     // Restart session
     let response = test_bash_request(None, Some(true)).await;
@@ -86,6 +71,6 @@ async fn test_session_restart() {
     // Try to echo the variable again - should be empty after restart
     let response = test_bash_request(Some("echo $TEST_VAR"), None).await;
     assert_eq!(response.status().as_u16(), 200);
-    let body = response.text().await.expect("Failed to get response text");
-    assert_eq!(body.trim(), "");
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert_eq!(body["data"].as_str().unwrap().trim(), "");
 } 

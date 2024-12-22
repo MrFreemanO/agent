@@ -128,7 +128,7 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
                     }
                 },
                 ComputerAction::Key => {
-                    // 处理按键操作
+                    // Process key action
                     if let Some(text) = &req.text {
                         match execute_xdotool(&["key", text]) {
                             Ok(_) => HttpResponse::Ok().json(ActionResponse {
@@ -151,7 +151,7 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
                     }
                 },
                 ComputerAction::Type => {
-                    // 处理输入文本操作
+                    // Process input text action
                     if let Some(text) = &req.text {
                         match execute_xdotool(&["type", text]) {
                             Ok(_) => HttpResponse::Ok().json(ActionResponse {
@@ -312,13 +312,13 @@ fn take_screenshot() -> HttpResponse {
                 });
             }
 
-            // 读取截图文件
+            // Read the screenshot file
             match fs::read(screenshot_path) {
                 Ok(image_data) => {
-                    // 转换为 base64
+                    // Convert to base64
                     let base64_string = general_purpose::STANDARD.encode(&image_data);
                     
-                    // 清理临时文件
+                    // Clean up temporary file
                     if let Err(e) = fs::remove_file(screenshot_path) {
                         log::warn!("Failed to remove temporary screenshot file: {}", e);
                     }
@@ -383,7 +383,7 @@ fn execute_xdotool(args: &[&str]) -> Result<String, String> {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EditAction {
+pub enum EditCommand {
     View,
     Create,
     StrReplace,
@@ -393,7 +393,7 @@ pub enum EditAction {
 
 #[derive(Debug, Deserialize)]
 pub struct EditRequest {
-    pub action: String,
+    pub command: String,
     pub path: String,
     pub file_text: Option<String>,
     pub view_range: Option<Vec<i32>>,
@@ -403,27 +403,27 @@ pub struct EditRequest {
 }
 
 impl EditRequest {
-    fn parse_action(&self) -> Option<EditAction> {
-        match self.action.as_str() {
-            "view" => Some(EditAction::View),
-            "create" => Some(EditAction::Create),
-            "str_replace" => Some(EditAction::StrReplace),
-            "insert" => Some(EditAction::Insert),
-            "undo_edit" => Some(EditAction::UndoEdit),
+    fn parse_command(&self) -> Option<EditCommand> {
+        match self.command.as_str() {
+            "view" => Some(EditCommand::View),
+            "create" => Some(EditCommand::Create),
+            "str_replace" => Some(EditCommand::StrReplace),
+            "insert" => Some(EditCommand::Insert),
+            "undo_edit" => Some(EditCommand::UndoEdit),
             _ => None,
         }
     }
 }
 
 pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
-    println!("Received edit action request: {:?}", req);
+    println!("Received edit command request: {:?}", req);
     let start = std::time::Instant::now();
     
-    let response = match req.parse_action() {
-        Some(action) => {
-            println!("Parsed action: {:?}", action);
-            match action {
-                EditAction::View => {
+    let response = match req.parse_command() {
+        Some(command) => {
+            println!("Parsed command: {:?}", command);
+            match command {
+                EditCommand::View => {
                     println!("Processing view action");
                     match fs::read_to_string(&req.path) {
                         Ok(content) => {
@@ -508,7 +508,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         }
                     }
                 },
-                EditAction::Create => {
+                EditCommand::Create => {
                     println!("Processing create action");
                     if let Some(text) = &req.file_text {
                         println!("Creating file at: {} with content length: {}", req.path, text.len());
@@ -539,13 +539,13 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         })
                     }
                 },
-                EditAction::StrReplace => {
+                EditCommand::StrReplace => {
                     println!("Processing string replace action");
                     if let (Some(old_str), Some(new_str)) = (&req.old_str, &req.new_str) {
                         match fs::read_to_string(&req.path) {
                             Ok(content) => {
                                 let new_content = content.replace(old_str, new_str);
-                                // 创建备份文件
+                                // Create backup file
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
@@ -583,7 +583,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         })
                     }
                 },
-                EditAction::Insert => {
+                EditCommand::Insert => {
                     println!("Processing insert action");
                     if let (Some(text), Some(line_num)) = (&req.file_text, &req.insert_line) {
                         match fs::read_to_string(&req.path) {
@@ -591,7 +591,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 let mut lines: Vec<&str> = content.lines().collect();
                                 let line_idx = *line_num as usize;
                                 
-                                // 创备份文件
+                                // Create backup file
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
@@ -639,7 +639,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                         })
                     }
                 },
-                EditAction::UndoEdit => {
+                EditCommand::UndoEdit => {
                     println!("Processing undo edit action");
                     let backup_path = format!("{}.bak", req.path);
                     if fs::metadata(&backup_path).is_ok() {
@@ -666,16 +666,16 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
             }
         },
         None => {
-            println!("Invalid action received: {}", req.action);
+            println!("Invalid command received: {}", req.command);
             HttpResponse::BadRequest().json(ActionResponse {
                 r#type: String::from("error"),
                 media_type: String::from("text/plain"),
-                data: String::from("Unsupported edit action"),
+                data: String::from("Unsupported edit command"),
             })
         }
     };
     
-    println!("Edit action completed in {:?}", start.elapsed());
+    println!("Edit command completed in {:?}", start.elapsed());
     response
 }
 
@@ -686,7 +686,7 @@ async fn health_check() -> impl Responder {
         .json(ActionResponse {
             r#type: String::from("success"),
             media_type: String::from("text/plain"),
-            data: String::from("Service is running"),
+            data: String::from("Service is running")
         })
 }
 
@@ -698,7 +698,7 @@ async fn computer_endpoint(req: web::Json<ActionRequest>) -> impl Responder {
 
 #[post("/edit")]
 async fn edit_endpoint(req: web::Json<EditRequest>) -> impl Responder {
-    log::info!("Edit action received: {:?}", req);
+    log::info!("Edit command received: {:?}", req);
     handle_edit_action(req).await
 }
 
@@ -769,7 +769,7 @@ impl BashSession {
         let mut output = String::new();
         let mut buffer = [0u8; 1024];
 
-        // 使用timeout包装读取操作
+        // Use timeout to wrap read operation
         match timeout(Self::TIMEOUT, async {
             loop {
                 match self.stdout.read(&mut buffer).await {
@@ -778,7 +778,7 @@ impl BashSession {
                         output.push_str(&chunk);
                         log::debug!("Read chunk: {}", chunk);
                         
-                        // 检查是否遇到结束标记
+                        // Check if end marker is encountered
                         if output.contains("---END---") {
                             log::info!("Found end marker");
                             break;
@@ -799,7 +799,7 @@ impl BashSession {
         .await
         {
             Ok(Ok(_)) => {
-                // 移除结束标记
+                // Remove end marker
                 if let Some(pos) = output.find("---END---") {
                     output.truncate(pos);
                 }
@@ -821,23 +821,23 @@ impl BashSession {
     }
 
     async fn stop(&mut self) -> Result<(), String> {
-        // 发送退出命令
+        // Send exit command
         self.stdin
             .write_all(b"exit\n")
             .await
             .map_err(|e| format!("Failed to send exit command: {}", e))?;
         
-        // 等待进程结束
+        // Wait for process to exit
         match timeout(Duration::from_secs(5), self.process.wait()).await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => {
                 log::warn!("Process didn't exit cleanly: {}", e);
-                // 强制结束进程
+                // Force kill process
                 self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
                 Ok(())
             },
             Err(_) => {
-                // 超时后强制结束进程
+                // Force kill process after timeout
                 self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
                 Ok(())
             }
@@ -855,14 +855,14 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
     
     // 处理restart请求
     if req.restart.unwrap_or(false) {
-        // 如果存在旧session，先停止它
+        // If there is an old session, stop it first
         if let Some(mut session) = session_guard.take() {
             if let Err(e) = session.stop().await {
                 log::warn!("Failed to stop bash session: {}", e);
             }
         }
         
-        // 创建新session
+        // Create a new session
         match BashSession::new().await {
             Ok(new_session) => {
                 *session_guard = Some(new_session);
@@ -880,9 +880,9 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
         }
     }
 
-    // 处理命令请求
+    // Process command request
     if let Some(command) = &req.command {
-        // 确保session存在
+        // Ensure session exists
         if session_guard.is_none() {
             match BashSession::new().await {
                 Ok(new_session) => {
@@ -896,7 +896,7 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
             }
         }
 
-        // 执行命令
+        // Execute command
         if let Some(session) = session_guard.as_mut() {
             match session.execute(command).await {
                 Ok((stdout, stderr)) => {
@@ -935,11 +935,11 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
 }
 
 pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::Server> {
-    // 在程序启动时立即打印
-    eprintln!("=== Server starting ===");  // 使用 eprintln! 确保输出到标准错误
+    // Print immediately when the program starts
+    eprintln!("=== Server starting ===");  // Use eprintln! to ensure output to standard error
     
     let server = HttpServer::new(move || {
-        eprintln!("=== Creating new worker ===");  // 添加工作进程创建日志
+        eprintln!("=== Creating new worker ===");  // Add worker creation log
         App::new()
             .wrap(Logger::default())
             .wrap(actix_web::middleware::NormalizePath::trim())
@@ -954,6 +954,6 @@ pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::S
     .listen(listener)?
     .run();
 
-    eprintln!("=== Server started ===");  // 添加服务器启动完成日志
+    eprintln!("=== Server started ===");  // Add server startup completion log
     Ok(server)
 } 

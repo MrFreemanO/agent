@@ -132,8 +132,8 @@ async fn test_computer_actions() {
 
         if should_succeed {
             assert_eq!(response.status().as_u16(), 200, "Action '{}' should succeed", action);
-            let body = response.text().await.expect("Failed to get response text");
-            assert!(!body.is_empty(), "Response for '{}' should not be empty", action);
+            let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+            assert!(body.get("data").is_some(), "Response for '{}' should contain data", action);
         } else {
             assert_eq!(response.status().as_u16(), 400, "Action '{}' should fail", action);
         }
@@ -191,9 +191,10 @@ async fn test_screenshot_response() {
     let response = test_action_with_params("screenshot", None, None).await;
     assert_eq!(response.status().as_u16(), 200);
     
-    let body = response.text().await.expect("Failed to get response text");
-    assert!(body.contains("\"type\":\"image\""));
-    assert!(body.contains("image_url"), "Screenshot data should not be empty");
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert_eq!(body["type"], "base64");
+    assert_eq!(body["media_type"], "image/png");
+    assert!(!body["data"].as_str().unwrap().is_empty(), "Screenshot data should not be empty");
 }
 
 #[tokio::test]
@@ -205,12 +206,19 @@ async fn test_cursor_position_response() {
     let status = response.status().as_u16();
     println!("Response status: {}", status);
     
-    assert_eq!(status, 200, "Expected 200 OK status");
-    
     let body = response.text().await.expect("Failed to get response text");
     println!("Response body: {}", body);
     
-    assert!(!body.is_empty(), "Response should not be empty");
+    assert_eq!(status, 200, "Expected 200 OK status");
+    
+    let body: serde_json::Value = serde_json::from_str(&body).expect("Failed to parse JSON");
+    
+    assert_eq!(body["type"], "success", "Expected success response type");
+    assert_eq!(body["media_type"], "text/plain", "Expected text/plain media type");
+    
+    let data = body["data"].as_str().expect("Data should be a string");
+    assert!(data.contains("X="), "Response should contain X coordinate");
+    assert!(data.contains("Y="), "Response should contain Y coordinate");
 }
 
 #[tokio::test]
@@ -245,8 +253,8 @@ async fn test_file_creation_and_view() {
     ).await;
     
     assert_eq!(response.status().as_u16(), 200, "File view should succeed");
-    let body = response.text().await.expect("Failed to get response text");
-    assert!(body.contains("Hello"), "View should show file content");
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert!(body["data"].as_str().unwrap().contains("Hello"), "View should show file content");
     
     // Test view with range
     let response = test_edit_command(
@@ -260,8 +268,8 @@ async fn test_file_creation_and_view() {
     ).await;
     
     assert_eq!(response.status().as_u16(), 200, "Range view should succeed");
-    let body = response.text().await.expect("Failed to get response text");
-    assert!(body.contains("Hello"), "Range view should show specified lines");
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert!(body["data"].as_str().unwrap().contains("Hello"), "Range view should show specified lines");
 }
 
 #[tokio::test]

@@ -55,9 +55,7 @@ RUN apt-get update && \
     libfm-gtk4 \
     gvfs \
     dconf-cli \
-    dbus-x11 \
     gnome-settings-daemon \
-    feh \
     pcmanfm \
     unzip \
     && apt-get clean && \
@@ -89,6 +87,19 @@ RUN add-apt-repository ppa:mozillateam/ppa && \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# After installing desktop environment
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    gedit \
+    gnome-menus && \
+    update-desktop-database && \
+    # Verify gedit.desktop location
+    find /usr/share/applications -name "*gedit*.desktop" -ls && \
+    # Create symlink if needed
+    if [ -f "/usr/share/applications/org.gnome.gedit.desktop" ]; then \
+        ln -sf /usr/share/applications/org.gnome.gedit.desktop /usr/share/applications/gedit.desktop; \
+    fi
+
 # Stage 3: Setup noVNC
 RUN git clone --branch v1.5.0 https://github.com/novnc/noVNC.git /opt/noVNC && \
     git clone --branch v0.12.0 https://github.com/novnc/websockify /opt/noVNC/utils/websockify && \
@@ -119,7 +130,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sudo -u $USERNAM
     echo 'source $HOME/.cargo/env' >> $HOME/.bashrc && \
     sudo -u $USERNAME bash -c 'source $HOME/.cargo/env && cargo install cargo-watch'
 
-# 创建必要的目录和权限
+# Create necessary directories and permissions
 RUN mkdir -p /var/run/dbus && \
     mkdir -p /run/user/1000 && \
     chown -R consoley:consoley /run/user/1000 && \
@@ -150,14 +161,14 @@ EXPOSE 5900 6080 8080
 # Startup command
 CMD ["/startup.sh"]
 
-# 创建用户之前，先创建系统目录
+# Create system directories before user setup
 USER root
 RUN mkdir -p /usr/lib/pcmanfm && \
     mkdir -p /usr/lib/x86_64-linux-gnu/pcmanfm && \
     chmod 755 /usr/lib/pcmanfm && \
     chmod 755 /usr/lib/x86_64-linux-gnu/pcmanfm
 
-# 创建用户目录和文件
+# Create user directories and files
 RUN mkdir -p /home/consoley/.config/pcmanfm/default && \
     mkdir -p /home/consoley/Templates && \
     mkdir -p /home/consoley/.local/share/pcmanfm && \
@@ -168,12 +179,30 @@ RUN mkdir -p /home/consoley/.config/pcmanfm/default && \
     chown -R consoley:consoley /home/consoley/Templates && \
     chown -R consoley:consoley /home/consoley/.local
 
-# 复制桌面配置文件
+# Copy desktop configuration files
 COPY desktop-config/pcmanfm/default/pcmanfm.conf /home/consoley/.config/pcmanfm/default/
+COPY desktop-config/pcmanfm/default/desktop-items-0.conf /home/consoley/.config/pcmanfm/default/
 
-# 设置配置文件权限
+# Set configuration file permissions
 RUN chown consoley:consoley /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
-    chmod 644 /home/consoley/.config/pcmanfm/default/pcmanfm.conf
+    chmod 644 /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
+    chown consoley:consoley /home/consoley/.config/pcmanfm/default/desktop-items-0.conf && \
+    chmod 644 /home/consoley/.config/pcmanfm/default/desktop-items-0.conf
 
-# 最后切换到非 root 用户
+# Switch to non-root user
+USER consoley
+
+# Create necessary directory structure
+RUN mkdir -p /home/consoley/.config/pcmanfm/default && \
+    chown -R consoley:consoley /home/consoley/.config && \
+    chmod -R 755 /home/consoley/.config
+
+# Create wallpaper directory and copy wallpaper before switching user
+USER root
+RUN mkdir -p /usr/share/backgrounds
+COPY wallpapers/christmas.png /usr/share/backgrounds/
+RUN chown root:root /usr/share/backgrounds/christmas.png && \
+    chmod 644 /usr/share/backgrounds/christmas.png
+
+# Finally switch back to non-root user
 USER consoley
