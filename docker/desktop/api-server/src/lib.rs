@@ -4,7 +4,7 @@ use std::process::Command;
 use std::fs;
 use base64::{Engine as _, engine::general_purpose};
 use actix_web::middleware::Logger;
-use tokio::time::{timeout, sleep, Duration};
+use tokio::time::{timeout, Duration};
 use std::{io::Write, process::Stdio};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use std::sync::Mutex;
@@ -713,12 +713,14 @@ struct BashSession {
     process: tokio::process::Child,
     stdin: tokio::process::ChildStdin,
     stdout: tokio::process::ChildStdout,
+    #[allow(dead_code)]
     stderr: tokio::process::ChildStderr,
     timed_out: bool,
 }
 
 impl BashSession {
     const TIMEOUT: Duration = Duration::from_secs(30);
+    #[allow(dead_code)]
     const OUTPUT_DELAY: Duration = Duration::from_millis(50);
     
     async fn new() -> Result<Self, String> {
