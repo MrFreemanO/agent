@@ -23,6 +23,7 @@ ConsoleY is a Docker-based remote desktop environment that containerizes the Ubu
 
 ### Prerequisites
 - Docker
+- Docker Desktop
 - Docker Compose
 
 ### Build and Run

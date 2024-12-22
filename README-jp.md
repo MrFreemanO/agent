@@ -21,6 +21,7 @@ ConsoleYは、Ubuntuデスクトップ環境をコンテナ化したDockerベー
 
 ### 必要条件
 - Docker
+- Docker Desktop
 - Docker Compose
 
 ### ビルドと実行

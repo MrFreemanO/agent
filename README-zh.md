@@ -23,6 +23,7 @@ ConsoleY 是一个基于 Docker 的远程桌面环境，它将 Ubuntu 桌面环�
 
 ### 环境要求
 - Docker
+- Docker Desktop
 - Docker Compose
 
 ### 构建和运行
