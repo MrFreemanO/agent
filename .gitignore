@@ -76,3 +76,9 @@ node_modules/
 
 # scripts
 scripts/
+
+# vscode
+.vscode
+
+# src-tauri
+src-tauri/
