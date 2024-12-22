@@ -70,15 +70,12 @@ lerna-debug.log*
 # node_modules
 node_modules/
 
-# Don't ignore desktop config files
-!docker/desktop/desktop-config/pcmanfm/default/pcmanfm.conf
-!docker/desktop/desktop-config/pcmanfm/default/desktop-items-0.conf
-
 # scripts
 scripts/
 
 # vscode
 .vscode
 
-# src-tauri
-src-tauri/
+# Don't ignore desktop config files
+!docker/desktop/desktop-config/pcmanfm/default/pcmanfm.conf
+!docker/desktop/desktop-config/pcmanfm/default/desktop-items-0.conf
