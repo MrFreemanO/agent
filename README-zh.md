@@ -14,6 +14,8 @@ Anthropic 的 Computer use 功能，让用户可以通过工具调用操作计�
 
 ConsoleY 是一个基于 Docker 的远程桌面环境，它将 Ubuntu 桌面环境容器化，不仅可以通过浏览器访问，还通过 Rust 实现的 API 服务提供远程控制能力，从而可以与任何支持工具调用的本地或云端AI助手配合使用。
 
+![demo](public/demo.png)
+
 ## 功能特点
 
 - 🖥️ 基于Docker的 Ubuntu 桌面环境，可通过浏览器访问
@@ -31,6 +33,8 @@ ConsoleY 是一个基于 Docker 的远程桌面环境，它将 Ubuntu 桌面环�
 ```bash
 # 构建开发环境镜像
 docker-compose -f docker-compose.yml build
+或：
+DOCKER_BUILDKIT=0 docker-compose build (如果使用docker-compose构建由于网络原因失败可尝试)
 
 # 启动开发环境容器
 docker-compose -f docker-compose.yml up -d
