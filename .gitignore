@@ -18,10 +18,6 @@ build/
 # Docker build
 docker/desktop/api-server/target/
 docker/desktop/api-server/Cargo.lock
-docker/desktop/desktop-config/*
-!docker/desktop/desktop-config/.gitkeep
-docker/desktop/image/.config/tint2/*
-!docker/desktop/image/.config/tint2/.gitkeep
 
 # Development
 .env
@@ -75,7 +71,3 @@ scripts/
 
 # vscode
 .vscode
-
-# Don't ignore desktop config files
-!docker/desktop/desktop-config/pcmanfm/default/pcmanfm.conf
-!docker/desktop/desktop-config/pcmanfm/default/desktop-items-0.conf
