@@ -24,7 +24,7 @@ services:
       - ./docker/desktop/api-server:/app/api-server:rw
       - cargo-cache:/home/consoley/.cargo
       - cargo-target:/app/api-server/target
-      - desktop-config:/home/consoley/.config
+      - ./docker/desktop/desktop-config:/home/consoley/.config/pcmanfm:rw
     cap_add:
       - SYS_ADMIN
     command: ["sh", "-c", "chmod +x /startup.sh && /startup.sh"]

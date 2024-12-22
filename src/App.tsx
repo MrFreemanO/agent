@@ -6,7 +6,7 @@ import './App.css';
 function App() {
   const [status, setStatus] = useState<string>('stopped');
   const [loading, setLoading] = useState<boolean>(false);
-  const [checked, setChecked] = useState(true);
+  const [checked, setChecked] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 30;
 

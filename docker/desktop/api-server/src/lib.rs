@@ -4,8 +4,8 @@ use std::process::Command;
 use std::fs;
 use base64::{Engine as _, engine::general_purpose};
 use actix_web::middleware::Logger;
-use tokio::time::{timeout, Duration};
-use std::process::Stdio;
+use tokio::time::{timeout, sleep, Duration};
+use std::{io::Write, process::Stdio};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -13,13 +13,10 @@ use std::sync::OnceLock;
 static BASH_SESSION: OnceLock<Mutex<Option<BashSession>>> = OnceLock::new();
 
 #[derive(Serialize)]
-#[serde(untagged)]
-pub enum ActionResponse {
-    Text(String),
-    Image {
-        r#type: String,
-        image_url: String,
-    }
+pub struct ActionResponse {
+    pub r#type: String,
+    pub media_type: String,
+    pub data: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,125 +115,174 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
                 },
                 ComputerAction::CursorPosition => {
                     match get_cursor_position() {
-                        Ok((x, y)) => HttpResponse::Ok()
-                            .content_type("text/plain")
-                            .body(format!("Cursor position is: X={}, Y={}", x, y)),
-                        Err(e) => HttpResponse::InternalServerError()
-                            .content_type("text/plain")
-                            .body(format!("Failed to get cursor position: {}", e))
+                        Ok((x, y)) => HttpResponse::Ok().json(ActionResponse {
+                            r#type: String::from("success"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Cursor position is: X={}, Y={}", x, y),
+                        }),
+                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Failed to get cursor position: {}", e),
+                        })
                     }
                 },
                 ComputerAction::Key => {
+                    // 处理按键操作
                     if let Some(text) = &req.text {
                         match execute_xdotool(&["key", text]) {
-                            Ok(_) => HttpResponse::Ok()
-                                .content_type("text/plain")
-                                .body("Key action executed successfully"),
-                            Err(e) => HttpResponse::InternalServerError()
-                                .content_type("text/plain")
-                                .body(format!("Failed to execute key action: {}", e))
+                            Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                                r#type: String::from("success"),
+                                media_type: String::from("text/plain"),
+                                data: String::from("Key action executed successfully"),
+                            }),
+                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                r#type: String::from("error"),
+                                media_type: String::from("text/plain"),
+                                data: format!("Failed to execute key action: {}", e),
+                            })
                         }
                     } else {
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("Text parameter is required for key action")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Text parameter is required for key action"),
+                        })
                     }
                 },
                 ComputerAction::Type => {
+                    // 处理输入文本操作
                     if let Some(text) = &req.text {
                         match execute_xdotool(&["type", text]) {
-                            Ok(_) => HttpResponse::Ok()
-                                .content_type("text/plain")
-                                .body("Type action executed successfully"),
-                            Err(e) => HttpResponse::InternalServerError()
-                                .content_type("text/plain")
-                                .body(format!("Failed to execute type action: {}", e))
+                            Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                                r#type: String::from("success"),
+                                media_type: String::from("text/plain"),
+                                data: String::from("Type action executed successfully"),
+                            }),
+                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                r#type: String::from("error"),
+                                media_type: String::from("text/plain"),
+                                data: format!("Failed to execute type action: {}", e),
+                            })
                         }
                     } else {
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("Text parameter is required for type action")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Text parameter is required for type action"),
+                        })
                     }
                 },
                 ComputerAction::MouseMove => {
+                    // 处理鼠标移动操作
                     if let Some(coords) = &req.coordinate {
                         if coords.len() == 2 {
                             match execute_xdotool(&["mousemove", &coords[0].to_string(), &coords[1].to_string()]) {
-                                Ok(_) => HttpResponse::Ok()
-                                    .content_type("text/plain")
-                                    .body("Mouse move executed successfully"),
-                                Err(e) => HttpResponse::InternalServerError()
-                                    .content_type("text/plain")
-                                    .body(format!("Failed to execute mouse move: {}", e))
+                                Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                                    r#type: String::from("success"),
+                                    media_type: String::from("text/plain"),
+                                    data: String::from("Mouse move executed successfully"),
+                                }),
+                                Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                    r#type: String::from("error"),
+                                    media_type: String::from("text/plain"),
+                                    data: format!("Failed to execute mouse move: {}", e),
+                                })
                             }
                         } else {
-                            HttpResponse::BadRequest()
-                                .content_type("text/plain")
-                                .body("Coordinate must contain exactly 2 values")
+                            HttpResponse::BadRequest().json(ActionResponse {
+                                r#type: String::from("error"),
+                                media_type: String::from("text/plain"),
+                                data: String::from("Coordinate must contain exactly 2 values"),
+                            })
                         }
                     } else {
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("Coordinate parameter is required for mouse move")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Coordinate parameter is required for mouse move"),
+                        })
                     }
                 },
                 ComputerAction::LeftClick => {
                     match execute_xdotool(&["click", "1"]) {
-                        Ok(_) => HttpResponse::Ok()
-                            .content_type("text/plain")
-                            .body("Left click executed successfully"),
-                        Err(e) => HttpResponse::InternalServerError()
-                            .content_type("text/plain")
-                            .body(format!("Failed to execute left click: {}", e))
+                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                            r#type: String::from("success"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Left click executed successfully"),
+                        }),
+                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Failed to execute left click: {}", e),
+                        })
                     }
                 },
                 ComputerAction::LeftClickDrag => {
                     match execute_xdotool(&["mousedown", "1"]) {
-                        Ok(_) => HttpResponse::Ok()
-                            .content_type("text/plain")
-                            .body("Left click drag executed successfully!"),
-                        Err(e) => HttpResponse::InternalServerError()
-                            .content_type("text/plain")
-                            .body(format!("Failed to execute left click drag: {}", e))
+                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                            r#type: String::from("success"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Left click drag executed successfully!"),
+                        }),
+                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Failed to execute left click drag: {}", e),
+                        })
                     }
                 },
                 ComputerAction::RightClick => {
                     match execute_xdotool(&["click", "3"]) {
-                        Ok(_) => HttpResponse::Ok()
-                            .content_type("text/plain")
-                            .body("Right click executed successfully"),
-                        Err(e) => HttpResponse::InternalServerError()
-                            .content_type("text/plain")
-                            .body(format!("Failed to execute right click: {}", e))
+                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                            r#type: String::from("success"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Right click executed successfully"),
+                        }),
+                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Failed to execute right click: {}", e),
+                        })
                     }
                 },
                 ComputerAction::MiddleClick => {
                     match execute_xdotool(&["click", "2"]) {
-                        Ok(_) => HttpResponse::Ok()
-                            .content_type("text/plain")
-                            .body("Middle click executed successfully"),
-                        Err(e) => HttpResponse::InternalServerError()
-                            .content_type("text/plain")
-                            .body(format!("Failed to execute middle click: {}", e))
+                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                            r#type: String::from("success"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Middle click executed successfully"),
+                        }),
+                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Failed to execute middle click: {}", e),
+                        })
                     }
                 },
                 ComputerAction::DoubleClick => {
                     match execute_xdotool(&["click", "--repeat", "2", "1"]) {
-                        Ok(_) => HttpResponse::Ok()
-                            .content_type("text/plain")
-                            .body("Double click executed successfully"),
-                        Err(e) => HttpResponse::InternalServerError()
-                            .content_type("text/plain")
-                            .body(format!("Failed to execute double click: {}", e))
+                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                            r#type: String::from("success"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("Double click executed successfully"),
+                        }),
+                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: format!("Failed to execute double click: {}", e),
+                        })
                     }
                 },
             }
         },
         None => {
             log::error!("Invalid action: {}", req.action);
-            HttpResponse::BadRequest()
-                .content_type("text/plain")
-                .body("Invalid action")
+            HttpResponse::BadRequest().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: String::from("Invalid action"),
+            })
         }
     };
     
@@ -259,16 +305,20 @@ fn take_screenshot() -> HttpResponse {
             if !output.status.success() {
                 let error = String::from_utf8_lossy(&output.stderr);
                 log::error!("Screenshot command failed: {}", error);
-                return HttpResponse::InternalServerError()
-                    .content_type("text/plain")
-                    .body(format!("Failed to take screenshot: {}", error));
+                return HttpResponse::InternalServerError().json(ActionResponse {
+                    r#type: String::from("error"),
+                    media_type: String::from("text/plain"),
+                    data: format!("Failed to take screenshot: {}", error),
+                });
             }
 
             // 读取截图文件
             match fs::read(screenshot_path) {
                 Ok(image_data) => {
+                    // 转换为 base64
                     let base64_string = general_purpose::STANDARD.encode(&image_data);
                     
+                    // 清理临时文件
                     if let Err(e) = fs::remove_file(screenshot_path) {
                         log::warn!("Failed to remove temporary screenshot file: {}", e);
                     }
@@ -276,24 +326,29 @@ fn take_screenshot() -> HttpResponse {
                     log::info!("Screenshot taken successfully");
                     HttpResponse::Ok()
                         .content_type("application/json")
-                        .json(ActionResponse::Image {
-                            r#type: String::from("image"),
-                            image_url: base64_string,
+                        .json(ActionResponse {
+                            r#type: String::from("base64"),
+                            media_type: String::from("image/png"),
+                            data: base64_string,
                         })
-                },
+                }
                 Err(e) => {
                     log::error!("Failed to read screenshot file: {}", e);
-                    HttpResponse::InternalServerError()
-                        .content_type("text/plain")
-                        .body(format!("Failed to read screenshot file: {}", e))
+                    HttpResponse::InternalServerError().json(ActionResponse {
+                        r#type: String::from("error"),
+                        media_type: String::from("text/plain"),
+                        data: format!("Failed to read screenshot file: {}", e),
+                    })
                 }
             }
         }
         Err(e) => {
             log::error!("Failed to execute screenshot command: {}", e);
-            HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body(format!("Failed to execute screenshot command: {}", e))
+            HttpResponse::InternalServerError().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: format!("Failed to execute screenshot command: {}", e),
+            })
         }
     }
 }
@@ -328,7 +383,7 @@ fn execute_xdotool(args: &[&str]) -> Result<String, String> {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EditCommand {
+pub enum EditAction {
     View,
     Create,
     StrReplace,
@@ -338,7 +393,7 @@ pub enum EditCommand {
 
 #[derive(Debug, Deserialize)]
 pub struct EditRequest {
-    pub command: String,
+    pub action: String,
     pub path: String,
     pub file_text: Option<String>,
     pub view_range: Option<Vec<i32>>,
@@ -348,27 +403,27 @@ pub struct EditRequest {
 }
 
 impl EditRequest {
-    fn parse_command(&self) -> Option<EditCommand> {
-        match self.command.as_str() {
-            "view" => Some(EditCommand::View),
-            "create" => Some(EditCommand::Create),
-            "str_replace" => Some(EditCommand::StrReplace),
-            "insert" => Some(EditCommand::Insert),
-            "undo_edit" => Some(EditCommand::UndoEdit),
+    fn parse_action(&self) -> Option<EditAction> {
+        match self.action.as_str() {
+            "view" => Some(EditAction::View),
+            "create" => Some(EditAction::Create),
+            "str_replace" => Some(EditAction::StrReplace),
+            "insert" => Some(EditAction::Insert),
+            "undo_edit" => Some(EditAction::UndoEdit),
             _ => None,
         }
     }
 }
 
 pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
-    println!("Received edit command request: {:?}", req);
+    println!("Received edit action request: {:?}", req);
     let start = std::time::Instant::now();
     
-    let response = match req.parse_command() {
-        Some(command) => {
-            println!("Parsed command: {:?}", command);
-            match command {
-                EditCommand::View => {
+    let response = match req.parse_action() {
+        Some(action) => {
+            println!("Parsed action: {:?}", action);
+            match action {
+                EditAction::View => {
                     println!("Processing view action");
                     match fs::read_to_string(&req.path) {
                         Ok(content) => {
@@ -378,9 +433,11 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                             if let Some(range) = &req.view_range {
                                 // First check array length
                                 if range.len() != 2 {
-                                    return HttpResponse::BadRequest()
-                                        .content_type("text/plain")
-                                        .body("view_range should contain exactly 2 integers");
+                                    return HttpResponse::BadRequest().json(ActionResponse {
+                                        r#type: String::from("error"),
+                                        media_type: String::from("text/plain"),
+                                        data: String::from("view_range should contain exactly 2 integers"),
+                                    });
                                 }
 
                                 let lines: Vec<&str> = file_content.split('\n').collect();
@@ -390,25 +447,31 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
 
                                 // Validate init_line
                                 if init_line < 1 || init_line as usize > n_lines_file {
-                                    return HttpResponse::BadRequest()
-                                        .content_type("text/plain")
-                                        .body(format!("Invalid view_range: first element {} should be within range [1, {}]", 
-                                            init_line, n_lines_file));
+                                    return HttpResponse::BadRequest().json(ActionResponse {
+                                        r#type: String::from("error"),
+                                        media_type: String::from("text/plain"),
+                                        data: format!("Invalid view_range: first element {} should be within range [1, {}]", 
+                                            init_line, n_lines_file),
+                                    });
                                 }
 
                                 // Validate final_line
                                 if final_line != -1 {
                                     if final_line as usize > n_lines_file {
-                                        return HttpResponse::BadRequest()
-                                            .content_type("text/plain")
-                                            .body(format!("Invalid view_range: second element {} should be smaller than number of lines {}", 
-                                                final_line, n_lines_file));
+                                        return HttpResponse::BadRequest().json(ActionResponse {
+                                            r#type: String::from("error"),
+                                            media_type: String::from("text/plain"),
+                                            data: format!("Invalid view_range: second element {} should be smaller than number of lines {}", 
+                                                final_line, n_lines_file),
+                                        });
                                     }
                                     if final_line < init_line {
-                                        return HttpResponse::BadRequest()
-                                            .content_type("text/plain")
-                                            .body(format!("Invalid view_range: second element {} should be larger or equal to first element {}", 
-                                                final_line, init_line));
+                                        return HttpResponse::BadRequest().json(ActionResponse {
+                                            r#type: String::from("error"),
+                                            media_type: String::from("text/plain"),
+                                            data: format!("Invalid view_range: second element {} should be larger or equal to first element {}", 
+                                                final_line, init_line),
+                                        });
                                     }
                                 }
 
@@ -422,82 +485,105 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 file_content = selected_lines.join("\n");
                             }
 
-                            HttpResponse::Ok()
-                                .content_type("text/plain")
-                                .body(file_content)
+                            HttpResponse::Ok().json(ActionResponse {
+                                r#type: String::from("success"),
+                                media_type: String::from("text/plain"),
+                                data: file_content,
+                            })
                         },
                         Err(e) => {
                             if e.kind() == std::io::ErrorKind::NotFound {
-                                HttpResponse::BadRequest()
-                                    .content_type("text/plain")
-                                    .body(format!("File not found: {}", req.path))
+                                HttpResponse::BadRequest().json(ActionResponse {
+                                    r#type: String::from("error"),
+                                    media_type: String::from("text/plain"),
+                                    data: format!("File not found: {}", req.path),
+                                })
                             } else {
-                                HttpResponse::InternalServerError()
-                                    .content_type("text/plain")
-                                    .body(format!("Failed to read file: {}", e))
+                                HttpResponse::InternalServerError().json(ActionResponse {
+                                    r#type: String::from("error"),
+                                    media_type: String::from("text/plain"),
+                                    data: format!("Failed to read file: {}", e),
+                                })
                             }
                         }
                     }
                 },
-                EditCommand::Create => {
+                EditAction::Create => {
                     println!("Processing create action");
                     if let Some(text) = &req.file_text {
                         println!("Creating file at: {} with content length: {}", req.path, text.len());
                         match fs::write(&req.path, text) {
                             Ok(_) => {
                                 println!("File created successfully");
-                                HttpResponse::Ok()
-                                    .content_type("text/plain")
-                                    .body(format!("File created successfully at: {}", req.path))
+                                HttpResponse::Ok().json(ActionResponse {
+                                    r#type: String::from("success"),
+                                    media_type: String::from("text/plain"),
+                                    data: format!("File created successfully at: {}", req.path),
+                                })
                             },
                             Err(e) => {
                                 println!("Failed to create file: {}", e);
-                                HttpResponse::InternalServerError()
-                                    .content_type("text/plain")
-                                    .body(format!("Failed to create file: {}", e))
+                                HttpResponse::InternalServerError().json(ActionResponse {
+                                    r#type: String::from("error"),
+                                    media_type: String::from("text/plain"),
+                                    data: format!("Failed to create file: {}", e),
+                                })
                             }
                         }
                     } else {
                         println!("Missing file_text parameter");
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("file_text is required for create action")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("file_text is required for create action"),
+                        })
                     }
                 },
-                EditCommand::StrReplace => {
+                EditAction::StrReplace => {
                     println!("Processing string replace action");
                     if let (Some(old_str), Some(new_str)) = (&req.old_str, &req.new_str) {
                         match fs::read_to_string(&req.path) {
                             Ok(content) => {
                                 let new_content = content.replace(old_str, new_str);
+                                // 创建备份文件
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
-                                    return HttpResponse::InternalServerError()
-                                        .content_type("text/plain")
-                                        .body(format!("Failed to create backup: {}", e));
+                                    return HttpResponse::InternalServerError().json(ActionResponse {
+                                        r#type: String::from("error"),
+                                        media_type: String::from("text/plain"),
+                                        data: format!("Failed to create backup: {}", e),
+                                    });
                                 }
                                 
                                 match fs::write(&req.path, new_content) {
-                                    Ok(_) => HttpResponse::Ok()
-                                        .content_type("text/plain")
-                                        .body("String replacement completed successfully"),
-                                    Err(e) => HttpResponse::InternalServerError()
-                                        .content_type("text/plain")
-                                        .body(format!("Failed to write file: {}", e))
+                                    Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                                        r#type: String::from("success"),
+                                        media_type: String::from("text/plain"),
+                                        data: String::from("String replacement completed successfully"),
+                                    }),
+                                    Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                        r#type: String::from("error"),
+                                        media_type: String::from("text/plain"),
+                                        data: format!("Failed to write file: {}", e),
+                                    })
                                 }
                             },
-                            Err(e) => HttpResponse::InternalServerError()
-                                .content_type("text/plain")
-                                .body(format!("Failed to read file: {}", e))
+                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                r#type: String::from("error"),
+                                media_type: String::from("text/plain"),
+                                data: format!("Failed to read file: {}", e),
+                            })
                         }
                     } else {
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("old_str and new_str are required for str_replace action")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("old_str and new_str are required for str_replace action"),
+                        })
                     }
                 },
-                EditCommand::Insert => {
+                EditAction::Insert => {
                     println!("Processing insert action");
                     if let (Some(text), Some(line_num)) = (&req.file_text, &req.insert_line) {
                         match fs::read_to_string(&req.path) {
@@ -505,70 +591,91 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 let mut lines: Vec<&str> = content.lines().collect();
                                 let line_idx = *line_num as usize;
                                 
+                                // 创备份文件
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
                                     println!("Failed to create backup file: {}", e);
-                                    return HttpResponse::InternalServerError()
-                                        .content_type("text/plain")
-                                        .body(format!("Failed to create backup: {}", e));
+                                    return HttpResponse::InternalServerError().json(ActionResponse {
+                                        r#type: String::from("error"),
+                                        media_type: String::from("text/plain"),
+                                        data: format!("Failed to create backup: {}", e),
+                                    });
                                 }
 
                                 if line_idx <= lines.len() {
                                     lines.insert(line_idx, text);
                                     let new_content = lines.join("\n");
                                     match fs::write(&req.path, new_content) {
-                                        Ok(_) => HttpResponse::Ok()
-                                            .content_type("text/plain")
-                                            .body("Text inserted successfully"),
-                                        Err(e) => HttpResponse::InternalServerError()
-                                            .content_type("text/plain")
-                                            .body(format!("Failed to write file: {}", e))
+                                        Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                                            r#type: String::from("success"),
+                                            media_type: String::from("text/plain"),
+                                            data: String::from("Text inserted successfully"),
+                                        }),
+                                        Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                            r#type: String::from("error"),
+                                            media_type: String::from("text/plain"),
+                                            data: format!("Failed to write file: {}", e),
+                                        })
                                     }
                                 } else {
-                                    HttpResponse::BadRequest()
-                                        .content_type("text/plain")
-                                        .body(format!("Line number {} is out of range", line_num))
+                                    HttpResponse::BadRequest().json(ActionResponse {
+                                        r#type: String::from("error"),
+                                        media_type: String::from("text/plain"),
+                                        data: format!("Line number {} is out of range", line_num),
+                                    })
                                 }
                             },
-                            Err(e) => HttpResponse::InternalServerError()
-                                .content_type("text/plain")
-                                .body(format!("Failed to read file: {}", e))
+                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                r#type: String::from("error"),
+                                media_type: String::from("text/plain"),
+                                data: format!("Failed to read file: {}", e),
+                            })
                         }
                     } else {
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("file_text and insert_line are required for insert action")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("file_text and insert_line are required for insert action"),
+                        })
                     }
                 },
-                EditCommand::UndoEdit => {
+                EditAction::UndoEdit => {
                     println!("Processing undo edit action");
                     let backup_path = format!("{}.bak", req.path);
                     if fs::metadata(&backup_path).is_ok() {
                         match fs::rename(&backup_path, &req.path) {
-                            Ok(_) => HttpResponse::Ok()
-                                .content_type("text/plain")
-                                .body("Edit undone successfully"),
-                            Err(e) => HttpResponse::InternalServerError()
-                                .content_type("text/plain")
-                                .body(format!("Failed to restore backup: {}", e))
+                            Ok(_) => HttpResponse::Ok().json(ActionResponse {
+                                r#type: String::from("success"),
+                                media_type: String::from("text/plain"),
+                                data: String::from("Edit undone successfully"),
+                            }),
+                            Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                                r#type: String::from("error"),
+                                media_type: String::from("text/plain"),
+                                data: format!("Failed to restore backup: {}", e),
+                            })
                         }
                     } else {
-                        HttpResponse::BadRequest()
-                            .content_type("text/plain")
-                            .body("No backup file found to undo")
+                        HttpResponse::BadRequest().json(ActionResponse {
+                            r#type: String::from("error"),
+                            media_type: String::from("text/plain"),
+                            data: String::from("No backup file found to undo"),
+                        })
                     }
                 }
             }
         },
         None => {
-            println!("Invalid command received: {}", req.command);
-            HttpResponse::BadRequest()
-                .content_type("text/plain")
-                .body("Unsupported edit command")
+            println!("Invalid action received: {}", req.action);
+            HttpResponse::BadRequest().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: String::from("Unsupported edit action"),
+            })
         }
     };
     
-    println!("Edit command completed in {:?}", start.elapsed());
+    println!("Edit action completed in {:?}", start.elapsed());
     response
 }
 
@@ -576,8 +683,11 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
 async fn health_check() -> impl Responder {
     log::info!("Health check called");
     HttpResponse::Ok()
-        .content_type("text/plain")
-        .body("Service is running")
+        .json(ActionResponse {
+            r#type: String::from("success"),
+            media_type: String::from("text/plain"),
+            data: String::from("Service is running"),
+        })
 }
 
 #[post("/computer")]
@@ -588,7 +698,7 @@ async fn computer_endpoint(req: web::Json<ActionRequest>) -> impl Responder {
 
 #[post("/edit")]
 async fn edit_endpoint(req: web::Json<EditRequest>) -> impl Responder {
-    log::info!("Edit command received: {:?}", req);
+    log::info!("Edit action received: {:?}", req);
     handle_edit_action(req).await
 }
 
@@ -603,26 +713,31 @@ struct BashSession {
     process: tokio::process::Child,
     stdin: tokio::process::ChildStdin,
     stdout: tokio::process::ChildStdout,
+    stderr: tokio::process::ChildStderr,
     timed_out: bool,
 }
 
 impl BashSession {
     const TIMEOUT: Duration = Duration::from_secs(30);
+    const OUTPUT_DELAY: Duration = Duration::from_millis(50);
     
     async fn new() -> Result<Self, String> {
         let mut child = tokio::process::Command::new("/bin/bash")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to spawn bash: {}", e))?;
 
         let stdin = child.stdin.take().ok_or("Failed to open stdin")?;
         let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
+        let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
 
         Ok(BashSession {
             process: child,
             stdin,
             stdout,
+            stderr,
             timed_out: false,
         })
     }
@@ -654,7 +769,7 @@ impl BashSession {
         let mut output = String::new();
         let mut buffer = [0u8; 1024];
 
-        // Wrap read operation with timeout
+        // 使用timeout包装读取操作
         match timeout(Self::TIMEOUT, async {
             loop {
                 match self.stdout.read(&mut buffer).await {
@@ -663,7 +778,7 @@ impl BashSession {
                         output.push_str(&chunk);
                         log::debug!("Read chunk: {}", chunk);
                         
-                        // Check if end marker is encountered
+                        // 检查是否遇到结束标记
                         if output.contains("---END---") {
                             log::info!("Found end marker");
                             break;
@@ -684,6 +799,7 @@ impl BashSession {
         .await
         {
             Ok(Ok(_)) => {
+                // 移除结束标记
                 if let Some(pos) = output.find("---END---") {
                     output.truncate(pos);
                 }
@@ -705,23 +821,23 @@ impl BashSession {
     }
 
     async fn stop(&mut self) -> Result<(), String> {
-        // Send exit command
+        // 发送退出命令
         self.stdin
             .write_all(b"exit\n")
             .await
             .map_err(|e| format!("Failed to send exit command: {}", e))?;
         
-        // Wait for process to exit
+        // 等待进程结束
         match timeout(Duration::from_secs(5), self.process.wait()).await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => {
                 log::warn!("Process didn't exit cleanly: {}", e);
-                // Force kill process
+                // 强制结束进程
                 self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
                 Ok(())
             },
             Err(_) => {
-                // Force kill process after timeout
+                // 超时后强制结束进程
                 self.process.kill().await.map_err(|e| format!("Failed to kill process: {}", e))?;
                 Ok(())
             }
@@ -737,44 +853,50 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
     let session_mutex = BASH_SESSION.get_or_init(|| Mutex::new(None));
     let mut session_guard = session_mutex.lock().unwrap();
     
-    // Handle restart request
+    // 处理restart请求
     if req.restart.unwrap_or(false) {
-        // If old session exists, stop it
+        // 如果存在旧session，先停止它
         if let Some(mut session) = session_guard.take() {
             if let Err(e) = session.stop().await {
                 log::warn!("Failed to stop bash session: {}", e);
             }
         }
         
-        // Create new session
+        // 创建新session
         match BashSession::new().await {
             Ok(new_session) => {
                 *session_guard = Some(new_session);
-                return HttpResponse::Ok()
-                    .content_type("text/plain")
-                    .body("Bash session has been restarted")
+                return HttpResponse::Ok().json(ActionResponse {
+                    r#type: String::from("success"),
+                    media_type: String::from("text/plain"),
+                    data: String::from("Bash session has been restarted"),
+                });
             },
-            Err(e) => return HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body(format!("Failed to restart bash session: {}", e))
+            Err(e) => return HttpResponse::InternalServerError().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: format!("Failed to restart bash session: {}", e),
+            })
         }
     }
 
-    // Handle command request
+    // 处理命令请求
     if let Some(command) = &req.command {
-        // Ensure session exists
+        // 确保session存在
         if session_guard.is_none() {
             match BashSession::new().await {
                 Ok(new_session) => {
                     *session_guard = Some(new_session);
                 },
-                Err(e) => return HttpResponse::InternalServerError()
-                    .content_type("text/plain")
-                    .body(format!("Failed to create bash session: {}", e))
+                Err(e) => return HttpResponse::InternalServerError().json(ActionResponse {
+                    r#type: String::from("error"),
+                    media_type: String::from("text/plain"),
+                    data: format!("Failed to create bash session: {}", e),
+                })
             }
         }
 
-        // Execute command
+        // 执行命令
         if let Some(session) = session_guard.as_mut() {
             match session.execute(command).await {
                 Ok((stdout, stderr)) => {
@@ -784,32 +906,40 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
                         format!("stdout:\n{}\nstderr:\n{}", stdout, stderr)
                     };
                     
-                    HttpResponse::Ok()
-                        .content_type("text/plain")
-                        .body(response)
+                    HttpResponse::Ok().json(ActionResponse {
+                        r#type: String::from("success"),
+                        media_type: String::from("text/plain"),
+                        data: response,
+                    })
                 }
-                Err(e) => HttpResponse::InternalServerError()
-                    .content_type("text/plain")
-                    .body(format!("Command execution failed: {}", e))
+                Err(e) => HttpResponse::InternalServerError().json(ActionResponse {
+                    r#type: String::from("error"),
+                    media_type: String::from("text/plain"),
+                    data: format!("Command execution failed: {}", e),
+                })
             }
         } else {
-            HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body("No active bash session")
+            HttpResponse::InternalServerError().json(ActionResponse {
+                r#type: String::from("error"),
+                media_type: String::from("text/plain"),
+                data: String::from("No active bash session"),
+            })
         }
     } else {
-        HttpResponse::BadRequest()
-            .content_type("text/plain")
-            .body("Invalid request: command is required when not restarting")
+        HttpResponse::BadRequest().json(ActionResponse {
+            r#type: String::from("error"),
+            media_type: String::from("text/plain"),
+            data: String::from("Invalid request: command is required when not restarting"),
+        })
     }
 }
 
 pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::Server> {
-    // Print immediately when program starts
-    eprintln!("=== Server starting ===");  // Use eprintln! to ensure output to standard error
+    // 在程序启动时立即打印
+    eprintln!("=== Server starting ===");  // 使用 eprintln! 确保输出到标准错误
     
     let server = HttpServer::new(move || {
-        eprintln!("=== Creating new worker ===");  // Add worker creation log
+        eprintln!("=== Creating new worker ===");  // 添加工作进程创建日志
         App::new()
             .wrap(Logger::default())
             .wrap(actix_web::middleware::NormalizePath::trim())
@@ -824,6 +954,6 @@ pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::S
     .listen(listener)?
     .run();
 
-    eprintln!("=== Server started ===");  // Add server startup completion log
+    eprintln!("=== Server started ===");  // 添加服务器启动完成日志
     Ok(server)
 } 

@@ -150,14 +150,17 @@ EXPOSE 5900 6080 8080
 # Startup command
 CMD ["/startup.sh"]
 
-# 创建必要的目录
+# 创建用户之前，先创建系统目录
+USER root
 RUN mkdir -p /usr/lib/pcmanfm && \
     mkdir -p /usr/lib/x86_64-linux-gnu/pcmanfm && \
-    mkdir -p /home/consoley/.config/pcmanfm/default && \
+    chmod 755 /usr/lib/pcmanfm && \
+    chmod 755 /usr/lib/x86_64-linux-gnu/pcmanfm
+
+# 创建用户目录和文件
+RUN mkdir -p /home/consoley/.config/pcmanfm/default && \
     mkdir -p /home/consoley/Templates && \
     mkdir -p /home/consoley/.local/share/pcmanfm && \
-    chmod 755 /usr/lib/pcmanfm && \
-    chmod 755 /usr/lib/x86_64-linux-gnu/pcmanfm && \
     touch /home/consoley/.xsession-errors && \
     chown consoley:consoley /home/consoley/.xsession-errors && \
     chmod 644 /home/consoley/.xsession-errors && \
@@ -167,10 +170,10 @@ RUN mkdir -p /usr/lib/pcmanfm && \
 
 # 复制桌面配置文件
 COPY desktop-config/pcmanfm/default/pcmanfm.conf /home/consoley/.config/pcmanfm/default/
-COPY desktop-config/pcmanfm/default/desktop-items-0.conf /home/consoley/.config/pcmanfm/default/
 
 # 设置配置文件权限
 RUN chown consoley:consoley /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
-    chown consoley:consoley /home/consoley/.config/pcmanfm/default/desktop-items-0.conf && \
-    chmod 644 /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
-    chmod 644 /home/consoley/.config/pcmanfm/default/desktop-items-0.conf
+    chmod 644 /home/consoley/.config/pcmanfm/default/pcmanfm.conf
+
+# 最后切换到非 root 用户
+USER consoley
