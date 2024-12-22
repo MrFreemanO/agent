@@ -22,8 +22,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./docker/desktop/api-server:/app/api-server:rw
-      - cargo-cache:/home/consoley/.cargo
-      - cargo-target:/app/api-server/target
+      - cargo-cache:/home/consoley/.cargo:rw
+      - cargo-target:/app/api-server/target:rw
     cap_add:
       - SYS_ADMIN
     command: ["sh", "-c", "chmod +x /startup.sh && /startup.sh"]
