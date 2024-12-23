@@ -18,8 +18,10 @@ if [ -d "/home/consoley/.cargo" ]; then
 fi
 
 # 确保 target 目录权限正确
-chmod -R 755 /app/api-server/target
-chown -R consoley:consoley /app/api-server/target
+if [ -d "/app/api-server/target" ]; then
+    chown -R consoley:consoley /app/api-server/target
+    chmod -R 755 /app/api-server/target
+fi
 
 # Set up desktop background
 cat > $HOME/.config/pcmanfm/default/desktop-items-0.conf << EOF
