@@ -1,7 +1,7 @@
 [English](README.md) | [中文](README-zh.md) | [日本語](README-jp.md)
 
-# ConsoleY
-Computer Use Desktop & API
+# ConsoleY - Virtual Desktop for AI Agents
+Empowering AI agents to operate their own desktop computers through APIs
 
 ```
  ______   ______   __   __   ______   ______   __       ______   __  __   
