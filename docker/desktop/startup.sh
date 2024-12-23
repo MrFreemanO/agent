@@ -11,13 +11,11 @@ mkdir -p /var/run
 mkdir -p $HOME/.config/pcmanfm/default
 mkdir -p /app/api-server/target
 
-# 只需要设置命名卷的权限
 if [ -d "/home/consoley/.cargo" ]; then
     chmod -R 755 /home/consoley/.cargo
     chown -R consoley:consoley /home/consoley/.cargo
 fi
 
-# 确保 target 目录权限正确
 if [ -d "/app/api-server/target" ]; then
     chown -R consoley:consoley /app/api-server/target
     chmod -R 755 /app/api-server/target

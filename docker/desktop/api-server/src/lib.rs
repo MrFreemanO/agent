@@ -294,7 +294,6 @@ fn take_screenshot() -> HttpResponse {
     log::info!("Taking screenshot...");
     let screenshot_path = "/tmp/screenshot.png";
     
-    // 执行截图命令
     let result = Command::new("scrot")
         .arg(screenshot_path)
         .env("DISPLAY", ":1")
