@@ -18,6 +18,10 @@ build/
 # Docker build
 docker/desktop/api-server/target/
 docker/desktop/api-server/Cargo.lock
+docker/desktop/desktop-config/*
+!docker/desktop/desktop-config/.gitkeep
+docker/desktop/image/.config/tint2/*
+!docker/desktop/image/.config/tint2/.gitkeep
 
 # Development
 .env
