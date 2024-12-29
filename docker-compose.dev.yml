@@ -3,36 +3,33 @@ services:
   consoley:
     build:
       context: ./docker/desktop
-      dockerfile: Dockerfile
-    image: consoley/desktop:dev
+      dockerfile: Dockerfile.dev
+    image: consoleai/desktop:dev
     privileged: true
     working_dir: /app/api-server
     ports:
       - "5800:5900"  # VNC
       - "6070:6080"  # noVNC web access
       - "8090:8080"  # API service
+      - "9229:9229"    # Debug
     environment:
       - DISPLAY=:1
       - RUST_LOG=debug
-      - WIDTH=1280
-      - HEIGHT=800
+      - WIDTH=1024
+      - HEIGHT=768
       - DEBIAN_FRONTEND=noninteractive
       - USER=consoley
       - HOME=/home/consoley
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./docker/desktop/api-server:/app/api-server:rw
-      - cargo-cache:/home/consoley/.cargo:rw
-      - cargo-target:/app/api-server/target:rw
-      - consoley-home:/home/consoley:rw
-      - consoley-config:/home/consoley/.config:rw
+      - ./docker/desktop/desktop-config:/home/consoley/.config:rw
+      - ./docker/desktop/image/.config/tint2:/home/consoley/.config/tint2:rw
     cap_add:
       - SYS_ADMIN
-    command: ["sh", "-c", "chmod +x /startup.sh && /startup.sh"]
+    command: ["sh", "-c", "chmod +x /startup.dev.sh && /startup.dev.sh"]
     user: root
 
 volumes:
   cargo-cache:
   cargo-target:
-  consoley-home:
-  consoley-config:

@@ -11,7 +11,7 @@ Computer Use Desktop & API
 
 Anthropicのコンピュータ使用機能により、ユーザーはツール呼び出しを通じてコンピュータを操作し、コンピュータ操作のスーパーエージェントとなることができます。ただし、公式デモではチャットインターフェースとデスクトップが統合されており、個別に使用することも、APIを通じてリモートで呼び出すこともできません。
 
-ConsoleYは、Ubuntuデスクトップ環境をコンテナ化したDockerベースのリモートデスクトップ環境です。ブラウザからアクセスできるだけでなく、Rustで実装されたAPIサービスを通じて��モート制御機能を提供し、ツール呼び出しをサポートするローカルまたはクラウドベースのAIアシスタントと連携して使用できます。
+ConsoleYは、Ubuntuデスクトップ環境をコンテナ化したDockerベースのリモートデスクトップ環境です。ブラウザからアクセスできるだけでなく、Rustで実装されたAPIサービスを通じてリモート制御機能を提供し、ツール呼び出しをサポートするローカルまたはクラウドベースのAIアシスタントと連携して使用できます。
 
 ![demo](public/demo.png)
 
@@ -30,17 +30,26 @@ ConsoleYは、Ubuntuデスクトップ環境をコンテナ化したDockerベー
 ### ビルドと実行
 
 ```bash
+# リポジトリのクローン
+git clone git@github.com:consoley/consoley.git
+cd consoley
+
 # 開発環境イメージのビルド
-docker-compose -f docker-compose.yml build
+docker-compose build
 
 # 開発環境コンテナの起動
-docker-compose -f docker-compose.yml up -d
+docker-compose up -d
+```
+Dockerコンテナの起動後、APIサービスは自動的に起動し、`http://localhost:8090` でアクセスできます。APIサービスの健康状態は `http://localhost:8090/health` で確認できます。
 
+生のデスクトップGUIには `http://localhost:6070` からアクセスできます。
+
+```bash
 # 開発環境コンテナの停止
-docker-compose -f docker-compose.yml down
+docker-compose down
 ```
 
-### デスクトップを開く
+### 制御可能なデスクトップGUI
 
 ```bash
 # フロントエンド依存関係のインストール
@@ -49,13 +58,13 @@ npm install
 # デスクトップの起動
 npm run dev
 ```
-デスクトップを起動後、ブラウザで `http://localhost:1420` にアクセスしてデスクトップを利用できます。
+デスクトップを起動後、ブラウザで `http://localhost:1420` にアクセスして、より制御された形でデスクトップを利用できます。「人間による操作を許可」スイッチの切り替えが可能です。
 
 ## APIアクセス
 
 Dockerコンテナの起動後、APIサービスは自動的に起動し、`http://localhost:8090` でアクセスできます。
 
-APIインターフェースの設計��AnthropicのComputer use機能に準拠しており、デスクトップ操作、ファイル操作、シェルコマンドを単一のエンドポイントでサポートしています。詳細については[APIドキュメント](api.md)を参照してください。
+APIインターフェースの設計はAnthropicのComputer use機能に準拠しており、デスクトップ操作、ファイル操作、シェルコマンドを単一のエンドポイントでサポートしています。詳細については[APIドキュメント](api.md)を参照してください。
 
 ## ライセンス
 

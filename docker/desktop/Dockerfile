@@ -20,8 +20,8 @@ ENV HOME=/home/$USERNAME
 
 # Set display parameters
 ENV DISPLAY_NUM=1
-ENV HEIGHT=768
-ENV WIDTH=1024
+ENV HEIGHT=800
+ENV WIDTH=1280
 ENV DISPLAY=:$DISPLAY_NUM
 
 # Stage 1: Install base system packages
@@ -84,6 +84,7 @@ RUN add-apt-repository ppa:mozillateam/ppa && \
     libcanberra-gtk-module \
     libcanberra-gtk3-module \
     fonts-liberation \
+    fonts-noto-cjk \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -203,6 +204,28 @@ RUN mkdir -p /usr/share/backgrounds
 COPY wallpapers/christmas.png /usr/share/backgrounds/
 RUN chown root:root /usr/share/backgrounds/christmas.png && \
     chmod 644 /usr/share/backgrounds/christmas.png
+
+# Copy desktop configuration files
+COPY image/.config/applications/pcmanfm.desktop /usr/share/applications/
+RUN chmod 644 /usr/share/applications/pcmanfm.desktop
+
+# Create and configure Desktop directory
+RUN mkdir -p /home/consoley/Desktop && \
+    chown consoley:consoley /home/consoley/Desktop && \
+    chmod 755 /home/consoley/Desktop
+
+# Configure PCManFM
+COPY desktop-config/pcmanfm/default/pcmanfm.conf /home/consoley/.config/pcmanfm/default/
+RUN chown consoley:consoley /home/consoley/.config/pcmanfm/default/pcmanfm.conf && \
+    chmod 644 /home/consoley/.config/pcmanfm/default/pcmanfm.conf
+
+# Modify the permissions setup section
+RUN mkdir -p $HOME/.config && \
+    mkdir -p $HOME/Desktop $HOME/Documents $HOME/Downloads && \
+    chown -R $USERNAME:$USERNAME $HOME && \
+    chmod -R 755 $HOME && \
+    chown -R $USERNAME:$USERNAME $HOME/.config && \
+    chmod -R 755 $HOME/.config
 
 # Finally switch back to non-root user
 USER consoley

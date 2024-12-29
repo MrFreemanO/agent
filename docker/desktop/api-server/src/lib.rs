@@ -5,7 +5,7 @@ use std::fs;
 use base64::{Engine as _, engine::general_purpose};
 use actix_web::middleware::Logger;
 use tokio::time::{timeout, Duration};
-use std::{io::Write, process::Stdio};
+use std::process::Stdio;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -43,7 +43,7 @@ pub struct ActionRequest {
 
 impl ActionRequest {
     fn parse_action(&self) -> Option<ComputerAction> {
-        println!("Parsing action: {}", self.action);
+        log::debug!("Parsing action: {}", self.action);
         
         match self.action.as_str() {
             "cursor_position" => Some(ComputerAction::CursorPosition),
@@ -62,30 +62,30 @@ impl ActionRequest {
 }
 
 fn get_cursor_position() -> Result<(i32, i32), String> {
-    println!("Getting cursor position...");
+    log::info!("Getting cursor position...");
     let output = Command::new("xdotool")
         .env("DISPLAY", ":1")
         .args(&["getmouselocation", "--shell"])
         .output()
         .map_err(|e| {
-            println!("Failed to execute getmouselocation: {}", e);
+            log::error!("Failed to execute getmouselocation: {}", e);
             e.to_string()
         })?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr).to_string();
-        println!("getmouselocation command failed: {}", error);
+        log::error!("getmouselocation command failed: {}", error);
         return Err(error);
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    println!("Raw cursor position output: {}", output_str);
+    log::debug!("Raw cursor position output: {}", output_str);
     
     let x = output_str.lines()
         .find(|line| line.starts_with("X="))
         .and_then(|line| {
             let value = line.trim_start_matches("X=");
-            println!("Parsing X value: {}", value);
+            log::debug!("Parsing X value: {}", value);
             value.parse::<i32>().ok()
         })
         .ok_or_else(|| "Failed to parse X coordinate".to_string())?;
@@ -94,17 +94,17 @@ fn get_cursor_position() -> Result<(i32, i32), String> {
         .find(|line| line.starts_with("Y="))
         .and_then(|line| {
             let value = line.trim_start_matches("Y=");
-            println!("Parsing Y value: {}", value);
+            log::debug!("Parsing Y value: {}", value);
             value.parse::<i32>().ok()
         })
         .ok_or_else(|| "Failed to parse Y coordinate".to_string())?;
 
-    println!("Current cursor position: ({}, {})", x, y);
+    log::info!("Current cursor position: ({}, {})", x, y);
     Ok((x, y))
 }
 
 pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Responder {
-    log::info!("Processing computer action: {:?}", req);
+    log::info!("Processing computer action: {}", req.action);
     
     let result = match req.parse_action() {
         Some(action) => {
@@ -277,7 +277,7 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
             }
         },
         None => {
-            log::error!("Invalid action: {}", req.action);
+            log::warn!("Invalid action received: {}", req.action);
             HttpResponse::BadRequest().json(ActionResponse {
                 r#type: String::from("error"),
                 media_type: String::from("text/plain"),
@@ -286,7 +286,7 @@ pub async fn handle_computer_action(req: web::Json<ActionRequest>) -> impl Respo
         }
     };
     
-    log::info!("Computer action completed");
+    log::debug!("Computer action completed");
     result
 }
 
@@ -353,7 +353,7 @@ fn take_screenshot() -> HttpResponse {
 }
 
 fn execute_xdotool(args: &[&str]) -> Result<String, String> {
-    println!("Executing xdotool with args: {:?}", args);
+    log::debug!("Executing xdotool with args: {:?}", args);
     let start = std::time::Instant::now();
     
     let result = Command::new("xdotool")
@@ -361,22 +361,22 @@ fn execute_xdotool(args: &[&str]) -> Result<String, String> {
         .args(args)
         .output()
         .map_err(|e| {
-            println!("xdotool command failed: {}", e);
+            log::error!("xdotool command failed: {}", e);
             e.to_string()
         })
         .and_then(|output| {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                println!("xdotool succeeded with output: {}", stdout);
+                log::debug!("xdotool succeeded with output: {}", stdout);
                 Ok(stdout)
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                println!("xdotool failed with error: {}", stderr);
+                log::error!("xdotool failed with error: {}", stderr);
                 Err(stderr)
             }
         });
     
-    println!("xdotool execution took: {:?}", start.elapsed());
+    log::debug!("xdotool execution took: {:?}", start.elapsed());
     result
 }
 
@@ -415,15 +415,14 @@ impl EditRequest {
 }
 
 pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
-    println!("Received edit command request: {:?}", req);
+    log::info!("Received edit command: {} for path: {}", req.command, req.path);
     let start = std::time::Instant::now();
     
     let response = match req.parse_command() {
         Some(command) => {
-            println!("Parsed command: {:?}", command);
             match command {
                 EditCommand::View => {
-                    println!("Processing view action");
+                    log::debug!("Processing view action for path: {}", req.path);
                     match fs::read_to_string(&req.path) {
                         Ok(content) => {
                             let mut file_content = content;
@@ -508,12 +507,12 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                     }
                 },
                 EditCommand::Create => {
-                    println!("Processing create action");
+                    log::info!("Creating file at: {}", req.path);
                     if let Some(text) = &req.file_text {
-                        println!("Creating file at: {} with content length: {}", req.path, text.len());
+                        log::debug!("File content length: {}", text.len());
                         match fs::write(&req.path, text) {
                             Ok(_) => {
-                                println!("File created successfully");
+                                log::info!("File created successfully");
                                 HttpResponse::Ok().json(ActionResponse {
                                     r#type: String::from("success"),
                                     media_type: String::from("text/plain"),
@@ -521,7 +520,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 })
                             },
                             Err(e) => {
-                                println!("Failed to create file: {}", e);
+                                log::error!("Failed to create file: {}", e);
                                 HttpResponse::InternalServerError().json(ActionResponse {
                                     r#type: String::from("error"),
                                     media_type: String::from("text/plain"),
@@ -530,7 +529,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                             }
                         }
                     } else {
-                        println!("Missing file_text parameter");
+                        log::warn!("Missing file_text parameter");
                         HttpResponse::BadRequest().json(ActionResponse {
                             r#type: String::from("error"),
                             media_type: String::from("text/plain"),
@@ -539,7 +538,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                     }
                 },
                 EditCommand::StrReplace => {
-                    println!("Processing string replace action");
+                    log::info!("Performing string replacement in file: {}", req.path);
                     if let (Some(old_str), Some(new_str)) = (&req.old_str, &req.new_str) {
                         match fs::read_to_string(&req.path) {
                             Ok(content) => {
@@ -547,7 +546,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 // Create backup file
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
-                                    println!("Failed to create backup file: {}", e);
+                                    log::error!("Failed to create backup file: {}", e);
                                     return HttpResponse::InternalServerError().json(ActionResponse {
                                         r#type: String::from("error"),
                                         media_type: String::from("text/plain"),
@@ -583,7 +582,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                     }
                 },
                 EditCommand::Insert => {
-                    println!("Processing insert action");
+                    log::debug!("Processing insert action");
                     if let (Some(text), Some(line_num)) = (&req.file_text, &req.insert_line) {
                         match fs::read_to_string(&req.path) {
                             Ok(content) => {
@@ -593,7 +592,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                                 // Create backup file
                                 let backup_path = format!("{}.bak", req.path);
                                 if let Err(e) = fs::write(&backup_path, &content) {
-                                    println!("Failed to create backup file: {}", e);
+                                    log::error!("Failed to create backup file: {}", e);
                                     return HttpResponse::InternalServerError().json(ActionResponse {
                                         r#type: String::from("error"),
                                         media_type: String::from("text/plain"),
@@ -639,7 +638,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
                     }
                 },
                 EditCommand::UndoEdit => {
-                    println!("Processing undo edit action");
+                    log::debug!("Processing undo edit action");
                     let backup_path = format!("{}.bak", req.path);
                     if fs::metadata(&backup_path).is_ok() {
                         match fs::rename(&backup_path, &req.path) {
@@ -665,7 +664,7 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
             }
         },
         None => {
-            println!("Invalid command received: {}", req.command);
+            log::warn!("Invalid edit command received: {}", req.command);
             HttpResponse::BadRequest().json(ActionResponse {
                 r#type: String::from("error"),
                 media_type: String::from("text/plain"),
@@ -674,19 +673,21 @@ pub async fn handle_edit_action(req: web::Json<EditRequest>) -> impl Responder {
         }
     };
     
-    println!("Edit command completed in {:?}", start.elapsed());
+    log::debug!("Edit command completed in {:?}", start.elapsed());
     response
 }
 
 #[get("/health")]
 async fn health_check() -> impl Responder {
     log::info!("Health check called");
-    HttpResponse::Ok()
-        .json(ActionResponse {
-            r#type: String::from("success"),
-            media_type: String::from("text/plain"),
-            data: String::from("Service is running")
-        })
+    println!("Health check called by println");
+    let response = HttpResponse::Ok().json(ActionResponse {
+        r#type: String::from("success"),
+        media_type: String::from("text/plain"),
+        data: String::from("Service is running")
+    });
+    log::info!("Health check response: {:?}", response);
+    response
 }
 
 #[post("/computer")]
@@ -748,6 +749,8 @@ impl BashSession {
             return Err("Session timed out".to_string());
         }
 
+        log::debug!("Executing bash command");
+        
         let cmd = format!("{}\necho '---END---'\n", command);
         log::info!("Executing command: {}", cmd);
         
@@ -849,13 +852,14 @@ impl BashSession {
 
 #[post("/bash")]
 async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
-    log::info!("Received bash request: {:?}", req);
+    log::info!("Received bash request");
     
     let session_mutex = BASH_SESSION.get_or_init(|| Mutex::new(None));
     let mut session_guard = session_mutex.lock().unwrap();
     
     // 处理restart请求
     if req.restart.unwrap_or(false) {
+        log::info!("Restarting bash session");
         // If there is an old session, stop it first
         if let Some(mut session) = session_guard.take() {
             if let Err(e) = session.stop().await {
@@ -883,6 +887,7 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
 
     // Process command request
     if let Some(command) = &req.command {
+        log::debug!("Executing bash command");
         // Ensure session exists
         if session_guard.is_none() {
             match BashSession::new().await {
@@ -936,11 +941,10 @@ async fn bash_endpoint(req: web::Json<BashRequest>) -> impl Responder {
 }
 
 pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::Server> {
-    // Print immediately when the program starts
-    eprintln!("=== Server starting ===");  // Use eprintln! to ensure output to standard error
+    log::info!("=== Server starting ===");
     
     let server = HttpServer::new(move || {
-        eprintln!("=== Creating new worker ===");  // Add worker creation log
+        log::info!("=== Creating new worker ===");
         App::new()
             .wrap(Logger::default())
             .wrap(actix_web::middleware::NormalizePath::trim())
@@ -955,6 +959,6 @@ pub fn run(listener: std::net::TcpListener) -> std::io::Result<actix_web::dev::S
     .listen(listener)?
     .run();
 
-    eprintln!("=== Server started ===");  // Add server startup completion log
+    log::info!("=== Server started ===");
     Ok(server)
 } 

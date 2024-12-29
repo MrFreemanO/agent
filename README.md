@@ -1,7 +1,7 @@
 [English](README.md) | [中文](README-zh.md) | [日本語](README-jp.md)
 
 # ConsoleY - Virtual Desktop for AI Agents
-Empowering AI agents to operate their own desktop computers through APIs
+Empowering AI agents to operate their own computers through APIs
 
 ```
  ______   ______   __   __   ______   ______   __       ______   __  __   
@@ -32,17 +32,26 @@ ConsoleY is a Docker-based remote desktop environment that containerizes the Ubu
 ### Build and Run
 
 ```bash
+# Clone the repository
+git clone git@github.com:consoley/consoley.git
+cd consoley
+
 # Build development environment image
-docker-compose -f docker-compose.yml build
+docker-compose build
 
 # Start development environment container
-docker-compose -f docker-compose.yml up -d
+docker-compose up -d
+```
+After the Docker container starts, the API service will automatically start and can be accessed at `http://localhost:8090`. You can check the health status of the API service at `http://localhost:8090/health`.
 
+The raw desktop GUI can be accessed at `http://localhost:6070`.
+
+```bash
 # Stop development environment container
-docker-compose -f docker-compose.yml down
+docker-compose down
 ```
 
-### Open Desktop
+### Controllable Desktop GUI
 
 ```bash
 # Install frontend dependencies
@@ -51,11 +60,9 @@ npm install
 # Start desktop
 npm run dev
 ```
-After starting the desktop, you can access it through your browser at `http://localhost:1420`.
+After it, you can access the more controlled desktop through your browser at `http://localhost:1420`, which allows to toggle the "Allow human operation" switch.
 
-## API Access
-
-After the Docker container starts, the API service will automatically start and can be accessed at `http://localhost:8090`.
+## API Interface
 
 The API interface design follows Anthropic's Computer use feature, supporting desktop operations, file operations, and Shell commands through a single endpoint. For more details, please refer to the [API Documentation](api.md).
 

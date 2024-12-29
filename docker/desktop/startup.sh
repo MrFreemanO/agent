@@ -32,8 +32,8 @@ desktop_font=Sans 12
 folder=
 show_wm_menu=0
 sort=mtime;ascending;
-show_documents=0
-show_trash=0
+show_documents=1
+show_trash=1
 show_mounts=0
 EOF
 
@@ -41,6 +41,15 @@ EOF
 chown -R consoley:consoley $HOME/.config
 chmod -R 755 $HOME/.config
 chmod 644 $HOME/.config/pcmanfm/default/desktop-items-0.conf
+
+# Ensure persistent directories exist and have correct permissions
+for dir in "$HOME" "$HOME/.config" "$HOME/Desktop" "$HOME/Documents" "$HOME/Downloads"; do
+    if [ ! -d "$dir" ]; then
+        mkdir -p "$dir"
+    fi
+    chown -R consoley:consoley "$dir"
+    chmod -R 755 "$dir"
+done
 
 # Start supervisor
 exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf
