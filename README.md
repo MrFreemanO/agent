@@ -15,7 +15,7 @@ Anthropic's Computer use feature allows users to operate their computer through 
 
 ConsoleY is a Docker-based remote desktop environment that containerizes the Ubuntu desktop environment. It can not only be accessed through a browser but also provides remote control capabilities through an API service implemented in Rust, making it compatible with any local or cloud-based AI assistant that supports tool calls.
 
-![demo](public/demo.png)
+![demo](public/demo.jpg)
 
 ## Features
 
